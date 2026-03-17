@@ -64,6 +64,7 @@ npm run install:mac
 ```
 
 `make dev` now auto-stops stale Robin dev processes and picks free Forge ports, so reruns are safe even after interrupted sessions.
+In dev mode, Robin also forces `hide-on-blur` off and sets a tray title fallback so it stays visible while we iterate.
 
 Node is pinned in [.nvmrc](/Users/karansingh/projects/robin/.nvmrc) and [.node-version](/Users/karansingh/projects/robin/.node-version).
 After bootstrap, the repo-level wrappers [scripts/nodew](/Users/karansingh/projects/robin/scripts/nodew) and [scripts/npmw](/Users/karansingh/projects/robin/scripts/npmw) will use the local runtime automatically.

@@ -63,7 +63,15 @@ async function bootstrap(): Promise<void> {
   await app.whenReady();
   app.setName("Robin");
 
-  if (process.platform === "darwin" && app.isPackaged) {
+  const hideDockOverride = process.env.ROBIN_HIDE_DOCK;
+  const hideOnBlurOverride = process.env.ROBIN_HIDE_ON_BLUR;
+  const shouldHideDock =
+    hideDockOverride === "1" ? true : hideDockOverride === "0" ? false : app.isPackaged;
+  const shouldHideOnBlur =
+    hideOnBlurOverride === "1" ? true : hideOnBlurOverride === "0" ? false : app.isPackaged;
+  const trayTitle = process.env.ROBIN_TRAY_TITLE || (!app.isPackaged ? "Robin" : undefined);
+
+  if (process.platform === "darwin" && shouldHideDock) {
     app.dock?.hide();
   }
 
@@ -79,7 +87,8 @@ async function bootstrap(): Promise<void> {
     windowUrl: MAIN_WINDOW_WEBPACK_ENTRY,
     defaultShortcut: settings.shortcut,
     onShortcutChange: async (shortcut) => registerShortcut(shortcut),
-    hideOnBlur: app.isPackaged
+    hideOnBlur: shouldHideOnBlur,
+    trayTitle
   });
   shell.create();
   registerShortcut(settings.shortcut);

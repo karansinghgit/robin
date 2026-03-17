@@ -5,6 +5,7 @@ export interface PlatformShellOptions {
   defaultShortcut: string;
   onShortcutChange: (shortcut: string) => Promise<boolean>;
   hideOnBlur?: boolean;
+  trayTitle?: string;
 }
 
 function createTrayImage() {
@@ -76,6 +77,9 @@ export class PlatformShell {
 
     this.tray = new Tray(createTrayImage());
     this.tray.setToolTip("Robin");
+    if (this.options.trayTitle) {
+      this.tray.setTitle(this.options.trayTitle);
+    }
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Open Robin", click: () => this.togglePanel(this.tray?.getBounds()) },

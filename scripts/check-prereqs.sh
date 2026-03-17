@@ -5,19 +5,21 @@ set -euo pipefail
 echo "Robin prerequisite check"
 echo ""
 
-if ! command -v node >/dev/null 2>&1; then
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if ! "$SCRIPT_DIR/nodew" -v >/dev/null 2>&1; then
   echo "Missing: node"
   echo "Run: bash ./scripts/bootstrap-node.sh"
   exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
+if ! "$SCRIPT_DIR/npmw" -v >/dev/null 2>&1; then
   echo "Missing: npm"
   exit 1
 fi
 
-echo "Node: $(node -v)"
-echo "npm : $(npm -v)"
+echo "Node: $("$SCRIPT_DIR/nodew" -v)"
+echo "npm : $("$SCRIPT_DIR/npmw" -v)"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   if command -v xcodebuild >/dev/null 2>&1; then

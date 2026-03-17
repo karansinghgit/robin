@@ -19,7 +19,6 @@ Robin is a mac-first menu bar sidekick built with Electron. V1 focuses on two wo
 
 ```bash
 bash ./scripts/bootstrap-node.sh
-export PATH="$PWD/.local/node-v$(cat .nvmrc)-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')/bin:$PATH"
 ```
 
 2. Install dependencies:
@@ -65,6 +64,7 @@ npm run install:mac
 ```
 
 Node is pinned in [.nvmrc](/Users/karansingh/projects/robin/.nvmrc) and [.node-version](/Users/karansingh/projects/robin/.node-version).
+After bootstrap, the repo-level wrappers [scripts/nodew](/Users/karansingh/projects/robin/scripts/nodew) and [scripts/npmw](/Users/karansingh/projects/robin/scripts/npmw) will use the local runtime automatically.
 
 ## Testing
 

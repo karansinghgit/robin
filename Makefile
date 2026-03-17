@@ -29,62 +29,62 @@ help:
 	@echo "  See RELEASING.md for signing and release env vars"
 
 setup:
-	@npm run setup
+	@./scripts/npmw run setup
 
 dev:
-	@npm run dev
+	@./scripts/npmw run dev
 
 start:
-	@npm run start
+	@./scripts/npmw run start
 
 typecheck:
-	@npm run typecheck
+	@./scripts/npmw run typecheck
 
 check:
-	@npm run check
+	@./scripts/npmw run check
 
 test:
-	@npm run test
+	@./scripts/npmw run test
 
 clean:
-	@npm run clean
+	@./scripts/npmw run clean
 
 clean-dev:
-	@npm run clean:app
+	@./scripts/npmw run clean:app
 
 clean-all:
-	@npm run clean:all
+	@./scripts/npmw run clean:all
 
 package:
-	@npm run package:mac
+	@./scripts/npmw run package:mac
 
 package-mac:
-	@npm run package:mac
+	@./scripts/npmw run package:mac
 
 make:
-	@npm run make:mac
+	@./scripts/npmw run make:mac
 
 make-mac:
-	@npm run make:mac
+	@./scripts/npmw run make:mac
 
 install:
-	@npm run install:mac
+	@./scripts/npmw run install:mac
 
 uninstall:
-	@npm run uninstall:mac
+	@./scripts/npmw run uninstall:mac
 
 reinstall:
 	@make uninstall
 	@make install
 
 open-data:
-	@npm run open:user-data
+	@./scripts/npmw run open:user-data
 
 create-release:
-	@VERSION=$(VERSION) npm run release:prepare
+	@VERSION=$(VERSION) ./scripts/npmw run release:prepare
 
 deploy-release:
-	@VERSION=$(VERSION) npm run release:publish
+	@VERSION=$(VERSION) ./scripts/npmw run release:publish
 
 release:
-	@VERSION=$(VERSION) npm run release
+	@VERSION=$(VERSION) ./scripts/npmw run release

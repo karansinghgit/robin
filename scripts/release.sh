@@ -8,7 +8,7 @@ cd "$ROOT_DIR"
 VERSION="${VERSION:-${1:-}}"
 
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(node -e 'const v=require("./package.json").version.split(".").map(Number); v[2] += 1; console.log(v.join("."));')"
+  VERSION="$("$ROOT_DIR/scripts/nodew" -e 'const v=require("./package.json").version.split(".").map(Number); v[2] += 1; console.log(v.join("."));')"
 fi
 
 VERSION="$VERSION" bash ./scripts/create-release.sh

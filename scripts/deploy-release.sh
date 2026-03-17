@@ -18,7 +18,7 @@ fi
 VERSION="${VERSION:-${1:-}}"
 
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(node -p 'require("./package.json").version')"
+  VERSION="$("$ROOT_DIR/scripts/nodew" -p 'require("./package.json").version')"
 fi
 
 TAG="v$VERSION"

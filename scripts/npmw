@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+if command -v npm >/dev/null 2>&1; then
+  exec npm "$@"
+fi
+
+LOCAL_NPM="$(find "$ROOT_DIR/.local" -maxdepth 3 -path "*/bin/npm" 2>/dev/null | sort | head -n 1)"
+
+if [[ -x "$LOCAL_NPM" ]]; then
+  export PATH="$(dirname "$LOCAL_NPM"):$PATH"
+  exec "$LOCAL_NPM" "$@"
+fi
+
+echo "npm was not found."
+echo "Run: bash ./scripts/bootstrap-node.sh"
+exit 1

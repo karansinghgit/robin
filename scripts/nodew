@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+if command -v node >/dev/null 2>&1; then
+  exec node "$@"
+fi
+
+LOCAL_NODE="$(find "$ROOT_DIR/.local" -maxdepth 3 -path "*/bin/node" 2>/dev/null | sort | head -n 1)"
+
+if [[ -x "$LOCAL_NODE" ]]; then
+  exec "$LOCAL_NODE" "$@"
+fi
+
+echo "Node.js was not found."
+echo "Run: bash ./scripts/bootstrap-node.sh"
+exit 1

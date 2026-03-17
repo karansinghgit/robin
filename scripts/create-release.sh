@@ -29,15 +29,10 @@ else
   fi
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required."
-  exit 1
-fi
-
 VERSION="${VERSION:-${1:-}}"
 
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(node -e 'const v=require("./package.json").version.split(".").map(Number); v[2] += 1; console.log(v.join("."));')"
+  VERSION="$("$ROOT_DIR/scripts/nodew" -e 'const v=require("./package.json").version.split(".").map(Number); v[2] += 1; console.log(v.join("."));')"
 fi
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -47,9 +42,9 @@ fi
 
 echo "Preparing Robin v$VERSION"
 
-npm version "$VERSION" --no-git-tag-version
-npm run test
-npm run make:mac
+"$ROOT_DIR/scripts/npmw" version "$VERSION" --no-git-tag-version
+"$ROOT_DIR/scripts/npmw" run test
+"$ROOT_DIR/scripts/npmw" run make:mac
 
 git add package.json package-lock.json 2>/dev/null || git add package.json
 git commit -m "release: v$VERSION"
@@ -61,4 +56,4 @@ echo "Artifacts:"
 find out/make -type f \( -name "*.dmg" -o -name "*.zip" \) | sort || true
 echo ""
 echo "Next:"
-echo "  VERSION=$VERSION npm run release:publish"
+echo "  VERSION=$VERSION ./scripts/npmw run release:publish"

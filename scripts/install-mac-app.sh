@@ -6,13 +6,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 cd "$ROOT_DIR"
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required."
-  exit 1
-fi
-
 echo "Packaging Robin for macOS..."
-npm run package:mac
+"$ROOT_DIR/scripts/npmw" run package:mac
 
 APP_PATH="$(find "$ROOT_DIR/out" -type d -name 'Robin.app' | head -n 1)"
 

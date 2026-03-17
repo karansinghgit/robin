@@ -27,6 +27,8 @@ export class PlatformShell {
   private tray: Tray | null = null;
   private panel: BrowserWindow | null = null;
   private shortcut = "";
+  private readyToShow = false;
+  private pendingTrayBounds?: Electron.Rectangle;
 
   constructor(private readonly options: PlatformShellOptions) {}
 
@@ -55,6 +57,14 @@ export class PlatformShell {
 
     this.panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     this.panel.loadURL(this.options.windowUrl);
+    this.panel.once("ready-to-show", () => {
+      this.readyToShow = true;
+      if (this.pendingTrayBounds) {
+        const nextBounds = this.pendingTrayBounds;
+        this.pendingTrayBounds = undefined;
+        this.showPanel(nextBounds);
+      }
+    });
     this.panel.on("blur", () => {
       if (!this.panel?.webContents.isDevToolsOpened()) {
         this.hidePanel();
@@ -106,6 +116,11 @@ export class PlatformShell {
 
   private showPanel(trayBounds?: Electron.Rectangle): void {
     if (!this.panel) {
+      return;
+    }
+
+    if (!this.readyToShow) {
+      this.pendingTrayBounds = trayBounds;
       return;
     }
 

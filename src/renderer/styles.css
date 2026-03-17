@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+@layer components {
+  .glass-panel {
+    @apply rounded-[28px] border border-white/70 bg-white/55 shadow-sm backdrop-blur-xl;
+  }
+
+  .button {
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2.5 text-sm font-medium transition duration-200 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .button-primary {
+    @apply bg-ink text-white hover:bg-slate-800;
+  }
+
+  .button-secondary {
+    @apply border border-white/80 bg-white/75 text-slate-700 hover:bg-white;
+  }
+
+  .button-ghost {
+    @apply border border-transparent bg-transparent text-slate-500 hover:border-white/80 hover:bg-white/70 hover:text-slate-700;
+  }
+
+  .mode-pill {
+    @apply flex-1 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 transition;
+  }
+
+  .mode-pill-active {
+    @apply bg-ink text-white shadow-sm;
+  }
+
+  .thread-card {
+    @apply rounded-[22px] border border-transparent bg-white/55 p-3 text-left transition hover:border-white/80 hover:bg-white/80;
+  }
+
+  .thread-card-active {
+    @apply border-white/90 bg-white/90 shadow-sm;
+  }
+
+  .input {
+    @apply rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-ink outline-none ring-0 placeholder:text-slate-400 focus:border-pine/50;
+  }
+
+  .message-card {
+    @apply rounded-[28px] border border-white/70 px-4 py-4 shadow-sm;
+  }
+
+  .eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-500;
+  }
+}

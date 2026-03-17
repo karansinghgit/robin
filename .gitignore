@@ -1,0 +1,14 @@
+.DS_Store
+.local/
+.github/.DS_Store
+node_modules/
+.webpack/
+out/
+dist/
+coverage/
+.env
+.env.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

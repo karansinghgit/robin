@@ -9,11 +9,18 @@ export interface PlatformShellOptions {
 function createTrayImage() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
-      <rect x="2.5" y="2.5" width="15" height="15" rx="4" fill="black"/>
-      <path d="M6 13.8V6.2h2.1c1.1 0 1.9.2 2.4.7.5.4.8 1 .8 1.8 0 .7-.2 1.3-.7 1.7-.5.4-1.2.6-2 .6H7.8v3H6Zm1.8-4.5h.6c.5 0 .8-.1 1.1-.3.2-.2.3-.5.3-.8 0-.8-.5-1.2-1.4-1.2h-.6v2.3Z" fill="white"/>
+      <path d="M5.5 15V5h4.1c1.5 0 2.7.4 3.5 1.1.8.7 1.2 1.7 1.2 2.9 0 1.2-.4 2.2-1.2 2.9-.8.7-2 1.1-3.5 1.1H7.9V15H5.5Zm2.4-4h1.6c.8 0 1.4-.2 1.8-.5.4-.4.6-.8.6-1.5 0-.7-.2-1.2-.6-1.5-.4-.4-1-.5-1.8-.5H7.9V11Z" fill="black"/>
     </svg>
   `.trim();
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  const image = nativeImage
+    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`)
+    .resize({ width: 18, height: 18 });
+
+  if (process.platform === "darwin") {
+    image.setTemplateImage(true);
+  }
+
+  return image;
 }
 
 export class PlatformShell {

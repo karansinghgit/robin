@@ -63,7 +63,7 @@ async function bootstrap(): Promise<void> {
   await app.whenReady();
   app.setName("Robin");
 
-  if (process.platform === "darwin") {
+  if (process.platform === "darwin" && app.isPackaged) {
     app.dock?.hide();
   }
 
@@ -82,6 +82,10 @@ async function bootstrap(): Promise<void> {
   });
   shell.create();
   registerShortcut(settings.shortcut);
+
+  if (!app.isPackaged) {
+    shell.togglePanel();
+  }
 
   ipcMain.handle(IPC_CHANNELS.togglePanel, async () => {
     shell.togglePanel();

@@ -6,6 +6,9 @@ const { MakerZIP } = require("@electron-forge/maker-zip");
 const { WebpackPlugin } = require("@electron-forge/plugin-webpack");
 const path = require("path");
 
+const devPort = Number(process.env.ROBIN_FORGE_PORT || 3310);
+const loggerPort = Number(process.env.ROBIN_FORGE_LOGGER_PORT || 9310);
+
 function buildOsxSignConfig() {
   const identity = process.env.APPLE_SIGN_IDENTITY;
 
@@ -61,6 +64,8 @@ module.exports = {
   plugins: [
     new WebpackPlugin({
       mainConfig: path.resolve(__dirname, "webpack.main.config.js"),
+      port: devPort,
+      loggerPort,
       renderer: {
         config: path.resolve(__dirname, "webpack.renderer.config.js"),
         entryPoints: [

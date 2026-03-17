@@ -4,6 +4,7 @@ export interface PlatformShellOptions {
   windowUrl: string;
   defaultShortcut: string;
   onShortcutChange: (shortcut: string) => Promise<boolean>;
+  hideOnBlur?: boolean;
 }
 
 function createTrayImage() {
@@ -65,8 +66,9 @@ export class PlatformShell {
         this.showPanel(nextBounds);
       }
     });
+    const shouldHideOnBlur = this.options.hideOnBlur ?? true;
     this.panel.on("blur", () => {
-      if (!this.panel?.webContents.isDevToolsOpened()) {
+      if (shouldHideOnBlur && !this.panel?.webContents.isDevToolsOpened()) {
         this.hidePanel();
       }
     });

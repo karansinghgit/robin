@@ -78,7 +78,8 @@ async function bootstrap(): Promise<void> {
   shell = new PlatformShell({
     windowUrl: MAIN_WINDOW_WEBPACK_ENTRY,
     defaultShortcut: settings.shortcut,
-    onShortcutChange: async (shortcut) => registerShortcut(shortcut)
+    onShortcutChange: async (shortcut) => registerShortcut(shortcut),
+    hideOnBlur: app.isPackaged
   });
   shell.create();
   registerShortcut(settings.shortcut);

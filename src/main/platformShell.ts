@@ -20,7 +20,12 @@ function createTrayImage() {
   for (const candidate of assetCandidates) {
     const image = nativeImage.createFromPath(candidate.path);
     if (!image.isEmpty()) {
-      const resizedImage = image.resize({ width: 18, height: 18 });
+      const size = image.getSize();
+      const targetHeight = 18;
+      const targetWidth = size.width > 0 && size.height > 0
+        ? Math.max(18, Math.round((size.width / size.height) * targetHeight))
+        : 18;
+      const resizedImage = image.resize({ width: targetWidth, height: targetHeight, quality: "best" });
       if (process.platform === "darwin" && candidate.template) {
         resizedImage.setTemplateImage(true);
       }

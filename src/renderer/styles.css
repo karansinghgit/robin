@@ -141,7 +141,7 @@ button:focus-visible {
 .toolbar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
 }
 
 .toolbar-brand-button {
@@ -164,29 +164,18 @@ button:focus-visible {
   filter: drop-shadow(0 0 8px var(--warm-glow));
 }
 
-.toolbar-brand-button:hover .toolbar-name {
-  color: var(--warm-hover);
-}
-
 .toolbar-logo {
-  width: 18px;
-  height: 18px;
+  width: 40px;
+  height: 24px;
   display: block;
 }
 
 .toolbar-logo-img {
-  width: 18px;
-  height: 18px;
+  width: 40px;
+  height: 24px;
   display: block;
   object-fit: contain;
-  opacity: 0.88;
-}
-
-.toolbar-name {
-  font-size: 14px;
-  font-weight: 620;
-  letter-spacing: -0.025em;
-  color: var(--t1);
+  opacity: 0.94;
 }
 
 /* ── Sidebar ────────────────────────── */
@@ -486,7 +475,64 @@ button:focus-visible {
 
 .new-tab-state {
   margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 0 16px 26px;
+}
+
+.spotlight-scene {
+  position: relative;
+  width: 230px;
+  height: 138px;
+  margin: 0 auto 10px;
+  pointer-events: none;
+}
+
+.spotlight-haze {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 220px;
+  height: 116px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(214, 233, 255, 0.45) 0%, rgba(150, 196, 245, 0.18) 45%, rgba(67, 113, 170, 0.04) 72%, transparent 100%);
+  filter: blur(0.6px);
+}
+
+.spotlight-beam {
+  position: absolute;
+  left: 50%;
+  top: 58px;
+  width: 6px;
+  height: 84px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(217, 235, 255, 0.86) 0%, rgba(199, 224, 255, 0.42) 40%, rgba(166, 201, 245, 0.12) 72%, rgba(166, 201, 245, 0.02) 100%);
+  border-radius: 999px;
+  filter: blur(0.4px);
+}
+
+.spotlight-logo-wrap {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  width: 96px;
+  height: 58px;
+  border-radius: 999px;
+  border: 1px solid rgba(219, 236, 255, 0.52);
+  background: rgba(229, 240, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(180, 210, 245, 0.2), 0 0 24px rgba(187, 220, 255, 0.28);
+  display: grid;
+  place-items: center;
+}
+
+.spotlight-logo-img {
+  width: 80%;
+  height: 80%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(206, 227, 255, 0.5));
 }
 
 /* ── Composer ───────────────────────── */

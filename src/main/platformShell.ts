@@ -9,6 +9,42 @@ export interface PlatformShellOptions {
   trayTitle?: string;
 }
 
+function trimTransparentPadding(image: Electron.NativeImage): Electron.NativeImage {
+  const { width, height } = image.getSize();
+  if (width <= 0 || height <= 0) {
+    return image;
+  }
+
+  const pixels = image.toBitmap();
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = pixels[(y * width + x) * 4 + 3];
+      if (alpha > 10) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return image;
+  }
+
+  return image.crop({
+    x: minX,
+    y: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1
+  });
+}
+
 function createTrayImage() {
   const assetCandidates = [
     { path: path.join(app.getAppPath(), "assets", "trayTemplate.png"), template: true },
@@ -20,12 +56,13 @@ function createTrayImage() {
   for (const candidate of assetCandidates) {
     const image = nativeImage.createFromPath(candidate.path);
     if (!image.isEmpty()) {
-      const size = image.getSize();
-      const targetHeight = 20;
+      const trimmedImage = trimTransparentPadding(image);
+      const size = trimmedImage.getSize();
+      const targetHeight = 22;
       const targetWidth = size.width > 0 && size.height > 0
-        ? Math.max(20, Math.round((size.width / size.height) * targetHeight))
-        : 20;
-      const resizedImage = image.resize({ width: targetWidth, height: targetHeight, quality: "best" });
+        ? Math.max(22, Math.round((size.width / size.height) * targetHeight))
+        : 22;
+      const resizedImage = trimmedImage.resize({ width: targetWidth, height: targetHeight, quality: "best" });
       if (process.platform === "darwin" && candidate.template) {
         resizedImage.setTemplateImage(true);
       }
@@ -41,7 +78,7 @@ function createTrayImage() {
 
   const fallbackImage = nativeImage
     .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString("base64")}`)
-    .resize({ width: 18, height: 18 });
+    .resize({ width: 22, height: 22, quality: "best" });
 
   if (process.platform === "darwin") {
     fallbackImage.setTemplateImage(true);

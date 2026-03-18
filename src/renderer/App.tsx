@@ -398,7 +398,6 @@ export function App() {
           <div className="toolbar-logo">
             <img className="toolbar-logo-img" src={brandLogoIcon} alt="" aria-hidden="true" />
           </div>
-          <span className="toolbar-name">Robin</span>
         </button>
 
         <div className="toolbar-right">
@@ -462,6 +461,13 @@ export function App() {
               </>
             ) : (
               <div className="new-tab-state">
+                <div className="spotlight-scene" aria-hidden="true">
+                  <div className="spotlight-haze" />
+                  <div className="spotlight-beam" />
+                  <div className="spotlight-logo-wrap">
+                    <img className="spotlight-logo-img" src={brandLogoIcon} alt="" />
+                  </div>
+                </div>
                 <h1 className="greeting-hi">
                   Hi, <span className="greeting-name">{displayName}</span>
                 </h1>

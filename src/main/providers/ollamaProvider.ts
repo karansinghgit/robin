@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { ChatMessage, Citation, LocalModelCatalogItem, ModelPullResult, OllamaStatus } from "../../shared/contracts";
 
@@ -83,6 +83,10 @@ function formatReachabilityError(baseUrl: string): string {
   return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Open Ollama (or run 'ollama serve') and try again.`;
 }
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class OllamaProvider {
   private catalogCache: { loadedAt: number; items: LocalModelCatalogItem[] } | null = null;
 
@@ -100,6 +104,33 @@ export class OllamaProvider {
     }
 
     const version = await this.getVersion();
+
+    for (const candidate of buildBaseUrlCandidates(normalizedBaseUrl)) {
+      try {
+        const response = await fetch(`${candidate}/api/tags`);
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
+        const models = (payload.models ?? [])
+          .map((item) => item.name ?? item.model ?? "")
+          .filter(Boolean);
+
+        return {
+          state: models.length > 0 ? "ready" : "no_model",
+          baseUrl: candidate,
+          models,
+          selectedModel: selectedModel || models[0],
+          version,
+          downloadUrl: OLLAMA_DOWNLOAD_URL
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    await this.startOllamaIfPossible();
 
     for (const candidate of buildBaseUrlCandidates(normalizedBaseUrl)) {
       try {
@@ -403,6 +434,31 @@ export class OllamaProvider {
       return result.stdout.trim() || undefined;
     } catch {
       return undefined;
+    }
+  }
+
+  private async startOllamaIfPossible(): Promise<void> {
+    try {
+      const child = spawn("ollama", ["serve"], {
+        detached: true,
+        stdio: "ignore"
+      });
+      child.unref();
+    } catch {
+      return;
+    }
+
+    const deadline = Date.now() + 6000;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch("http://localhost:11434/api/tags");
+        if (response.ok) {
+          return;
+        }
+      } catch {
+        // Keep polling briefly while Ollama boots.
+      }
+      await sleep(300);
     }
   }
 }

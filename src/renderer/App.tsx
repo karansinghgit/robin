@@ -17,6 +17,7 @@ import {
   RobinBridge,
   SaveConfigInput,
   ThreadSummary,
+  TodoItem,
   UpdateCheckResult
 } from "../shared/contracts";
 
@@ -47,6 +48,8 @@ const CLOUD_PROVIDERS: CloudProviderMeta[] = [
   { id: "perplexity", label: "Perplexity" },
   { id: "openrouter", label: "OpenRouter" }
 ];
+
+type SidebarTab = "chats" | "todos" | "notes" | "calendar";
 
 type SettingsModeTab = "cloud" | "local";
 
@@ -222,6 +225,14 @@ function IconSend() {
   );
 }
 
+function IconStop() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="8" y="8" width="8" height="8" rx="1.3" ry="1.3" />
+    </svg>
+  );
+}
+
 function IconChevron() {
   return (
     <svg viewBox="0 0 12 8" aria-hidden="true" focusable="false">
@@ -254,6 +265,56 @@ function IconImage() {
       <rect x="3.5" y="5" width="17" height="14" rx="2.5" ry="2.5" />
       <circle cx="9" cy="10" r="1.4" />
       <path d="M20.5 15L15.5 11L11 15.5L9 13.8L3.5 18.4" />
+    </svg>
+  );
+}
+
+function IconChat() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 12C20 16.4183 16.4183 20 12 20C10.8053 20 9.66834 19.7467 8.64478 19.2908L4 20L5.07146 16.1278C4.39443 14.9129 4 13.5028 4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12Z" />
+    </svg>
+  );
+}
+
+function IconTodo() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4" y="4" width="7" height="7" rx="1.5" />
+      <path d="M14 7H20" />
+      <path d="M14 17H20" />
+      <rect x="4" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function IconNote() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 4H6C4.89543 4 4 4.89543 4 6V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V16" />
+      <path d="M20 12V6C20 4.89543 19.1046 4 18 4H16" />
+      <path d="M8 9H12" />
+      <path d="M8 13H16" />
+      <path d="M8 17H14" />
+    </svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4" y="5" width="16" height="16" rx="2" />
+      <path d="M4 10H20" />
+      <path d="M8 3V7" />
+      <path d="M16 3V7" />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 13L9 17L19 7" />
     </svg>
   );
 }
@@ -538,6 +599,18 @@ function errorMessage(error: unknown, fallback: string): string {
     return "Add a cloud API key in Settings or switch to Local mode.";
   }
 
+  if (/does not support image input|no endpoints found that support image input/i.test(message)) {
+    return "Selected model does not support image input. Choose a vision-capable model or send text only.";
+  }
+
+  if (/quota exceeded|rate[-\s]?limit|billing details|retry in/i.test(message)) {
+    return "Provider quota or rate limit reached. Check your plan/usage and retry.";
+  }
+
+  if (message.length > 420) {
+    return `${message.slice(0, 417).trimEnd()}...`;
+  }
+
   return message;
 }
 
@@ -559,6 +632,13 @@ export function App() {
     updates: false
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("chats");
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [newTodoTitle, setNewTodoTitle] = useState("");
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editingTodoTitle, setEditingTodoTitle] = useState("");
+  const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
+  const [dragOverTodoId, setDragOverTodoId] = useState<string | null>(null);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -568,6 +648,7 @@ export function App() {
   const [activeModelDraft, setActiveModelDraft] = useState(modelKey("search", ""));
   const [providerKeyDrafts, setProviderKeyDrafts] = useState<Record<CloudProviderId, string>>(() => buildProviderDrafts());
   const [selectedCloudModelsDraft, setSelectedCloudModelsDraft] = useState<Record<CloudProviderId, string[]>>(() => normalizeSelectedCloudModels());
+  const [openRouterModelDraft, setOpenRouterModelDraft] = useState("");
   const [customLocalModelDraft, setCustomLocalModelDraft] = useState("");
   const [localCatalog, setLocalCatalog] = useState<LocalModelCatalogItem[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -598,7 +679,55 @@ export function App() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamSequenceRef = useRef(0);
+  const activeStreamIdRef = useRef<string | null>(null);
+  const pendingDeltasRef = useRef(new Map<string, string>());
+  const deltaFrameRef = useRef<number | null>(null);
   const messages = activeThread?.messages ?? [];
+
+  function applyPendingDeltas() {
+    if (pendingDeltasRef.current.size === 0) {
+      return;
+    }
+
+    const deltaByMessageId = new Map(pendingDeltasRef.current);
+    pendingDeltasRef.current.clear();
+    setActiveThread((current) => current
+      ? {
+          ...current,
+          messages: current.messages.map((message) => {
+            const queued = deltaByMessageId.get(message.id);
+            if (!queued) {
+              return message;
+            }
+            return {
+              ...message,
+              content: message.content + queued,
+              status: "streaming"
+            };
+          })
+        }
+      : current);
+  }
+
+  function flushPendingDeltas() {
+    if (deltaFrameRef.current !== null) {
+      cancelAnimationFrame(deltaFrameRef.current);
+      deltaFrameRef.current = null;
+    }
+    applyPendingDeltas();
+  }
+
+  function queueDelta(messageId: string, delta: string) {
+    const existing = pendingDeltasRef.current.get(messageId) ?? "";
+    pendingDeltasRef.current.set(messageId, existing + delta);
+    if (deltaFrameRef.current !== null) {
+      return;
+    }
+    deltaFrameRef.current = window.requestAnimationFrame(() => {
+      deltaFrameRef.current = null;
+      applyPendingDeltas();
+    });
+  }
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -722,6 +851,18 @@ export function App() {
       return;
     }
 
+    if (provider === "openrouter") {
+      setCloudModelsByProvider((current) => ({
+        ...current,
+        openrouter: []
+      }));
+      setCloudModelsErrorByProvider((current) => ({
+        ...current,
+        openrouter: null
+      }));
+      return;
+    }
+
     try {
       setCloudModelsLoadingByProvider((current) => ({
         ...current,
@@ -783,6 +924,89 @@ export function App() {
     }
   }
 
+  async function loadTodos() {
+    try {
+      const list = await getRobinBridge().todos.list();
+      setTodos(list);
+    } catch {
+      // Silently fail — todos are non-critical
+    }
+  }
+
+  async function createTodo() {
+    const title = newTodoTitle.trim();
+    if (!title) return;
+    setNewTodoTitle("");
+    try {
+      const todo = await getRobinBridge().todos.create(title);
+      setTodos((current) => [...current, todo]);
+    } catch {
+      setNewTodoTitle(title);
+    }
+  }
+
+  async function toggleTodo(id: string, completed: boolean) {
+    setTodos((current) => current.map((t) => t.id === id ? { ...t, completed } : t));
+    try {
+      await getRobinBridge().todos.update(id, { completed });
+    } catch {
+      setTodos((current) => current.map((t) => t.id === id ? { ...t, completed: !completed } : t));
+    }
+  }
+
+  async function saveTodoTitle(id: string, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setEditingTodoId(null);
+      return;
+    }
+    setTodos((current) => current.map((t) => t.id === id ? { ...t, title: trimmed } : t));
+    setEditingTodoId(null);
+    try {
+      await getRobinBridge().todos.update(id, { title: trimmed });
+    } catch {
+      // Revert on failure
+      await loadTodos();
+    }
+  }
+
+  async function deleteTodoItem(id: string) {
+    setTodos((current) => current.filter((t) => t.id !== id));
+    try {
+      await getRobinBridge().todos.delete(id);
+    } catch {
+      await loadTodos();
+    }
+  }
+
+  async function handleTodoDrop(targetId: string) {
+    if (!draggedTodoId || draggedTodoId === targetId) {
+      setDraggedTodoId(null);
+      setDragOverTodoId(null);
+      return;
+    }
+    const reordered = [...todos];
+    const fromIndex = reordered.findIndex((t) => t.id === draggedTodoId);
+    const toIndex = reordered.findIndex((t) => t.id === targetId);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    setTodos(reordered);
+    setDraggedTodoId(null);
+    setDragOverTodoId(null);
+    try {
+      await getRobinBridge().todos.reorder(reordered.map((t) => t.id));
+    } catch {
+      await loadTodos();
+    }
+  }
+
+  useEffect(() => {
+    if (sidebarTab === "todos") {
+      void loadTodos();
+    }
+  }, [sidebarTab]);
+
   useEffect(() => {
     let isActive = true;
 
@@ -837,6 +1061,9 @@ export function App() {
     }
 
     for (const providerId of CLOUD_PROVIDER_IDS) {
+      if (providerId === "openrouter") {
+        continue;
+      }
       if (!status.cloudProviderKeys[providerId]) {
         continue;
       }
@@ -860,9 +1087,12 @@ export function App() {
       return;
     }
 
+    const selectedIds = selectedCloudModelsDraft[provider] ?? [];
+    const selectedIdSet = new Set(selectedIds);
     const providerModels = cloudModelsByProvider[provider] ?? [];
-    const selectedIds = new Set(selectedCloudModelsDraft[provider] ?? []);
-    const selectableModels = providerModels.filter((model) => selectedIds.has(model.id));
+    const selectableModels = provider === "openrouter"
+      ? selectedIds.map((modelId) => ({ id: modelId, modes: [] }))
+      : providerModels.filter((model) => selectedIdSet.has(model.id));
 
     if (selectableModels.length === 0) {
       if (cloudModelDraft) {
@@ -918,23 +1148,60 @@ export function App() {
       clearTimeout(streamWatchdogRef.current);
       streamWatchdogRef.current = null;
     }
+    if (deltaFrameRef.current !== null) {
+      cancelAnimationFrame(deltaFrameRef.current);
+      deltaFrameRef.current = null;
+    }
+    pendingDeltasRef.current.clear();
   }, []);
 
-  function stopPendingResponse() {
+  async function stopPendingResponse(nextError?: string, refreshAfterStop = true) {
     streamSequenceRef.current += 1;
+    const activeStreamId = activeStreamIdRef.current;
+    activeStreamIdRef.current = null;
+    flushPendingDeltas();
     if (streamWatchdogRef.current) {
       clearTimeout(streamWatchdogRef.current);
       streamWatchdogRef.current = null;
     }
     setIsStreaming(false);
+    if (typeof nextError === "string") {
+      setError(nextError);
+    } else {
+      setError(null);
+    }
     setActiveThread((current) => current
       ? {
           ...current,
-          messages: current.messages.map((message) => (
-            message.status === "streaming" ? { ...message, status: "complete" } : message
-          ))
+          messages: current.messages.flatMap((message) => {
+            if (message.status !== "streaming") {
+              return [message];
+            }
+
+            const emptyAssistant =
+              message.role === "assistant"
+              && message.content.trim().length === 0
+              && (message.attachments?.length ?? 0) === 0;
+
+            if (emptyAssistant) {
+              return [];
+            }
+
+            return [{ ...message, status: "complete" }];
+          })
         }
       : current);
+    try {
+      await getRobinBridge().chat.stopStream({
+        streamId: activeStreamId ?? undefined,
+        threadId: activeThread?.id
+      });
+      if (refreshAfterStop) {
+        await refreshThreads(activeThread?.id);
+      }
+    } catch {
+      // Ignore stream-stop bridge failures to keep the UI responsive.
+    }
   }
 
   async function persistConfig(patch: SaveConfigInput) {
@@ -1066,6 +1333,51 @@ export function App() {
     await persistConfig({
       selectedCloudModels: {
         [providerId]: next
+      }
+    });
+  }
+
+  async function addOpenRouterModel() {
+    const candidate = openRouterModelDraft.trim();
+    if (!candidate) {
+      return;
+    }
+
+    const current = selectedCloudModelsDraft.openrouter ?? [];
+    if (current.includes(candidate)) {
+      setOpenRouterModelDraft("");
+      return;
+    }
+
+    const next = [...current, candidate];
+    setSelectedCloudModelsDraft((prev) => ({
+      ...prev,
+      openrouter: next
+    }));
+    setOpenRouterModelDraft("");
+
+    await persistConfig({
+      selectedCloudModels: {
+        openrouter: next
+      }
+    });
+  }
+
+  async function removeOpenRouterModel(modelId: string) {
+    const current = selectedCloudModelsDraft.openrouter ?? [];
+    const next = current.filter((entry) => entry !== modelId);
+    setSelectedCloudModelsDraft((prev) => ({
+      ...prev,
+      openrouter: next
+    }));
+
+    if (cloudModelDraft === modelId && selectedCloudProvider === "openrouter") {
+      setCloudModelDraft(next[0] ?? "");
+    }
+
+    await persistConfig({
+      selectedCloudModels: {
+        openrouter: next
       }
     });
   }
@@ -1252,7 +1564,8 @@ export function App() {
   async function sendPrompt() {
     if (!prompt.trim() && pendingAttachments.length === 0) return;
     if (isStreaming) {
-      stopPendingResponse();
+      setError("Response in progress. Press Stop first.");
+      return;
     }
     const parsed = parseModelKey(activeModelDraft);
     const selectedCloudProvider = parsed.mode === "search"
@@ -1301,8 +1614,7 @@ export function App() {
       if (streamToken !== streamSequenceRef.current) {
         return;
       }
-      setIsStreaming(false);
-      setError("Model response timed out. Try again or switch model.");
+      void stopPendingResponse("Model response timed out. Press Stop and retry.");
     }, 30000);
     setIsStreaming(true);
     const text = prompt.trim();
@@ -1310,7 +1622,7 @@ export function App() {
     setPrompt("");
     setPendingAttachments([]);
     try {
-      await getRobinBridge().chat.streamReply(
+      const streamId = await getRobinBridge().chat.streamReply(
         {
           conversationId: activeThread?.id,
           mode: parsed.mode,
@@ -1326,22 +1638,12 @@ export function App() {
               return;
             }
             setActiveThread({ ...thread });
-            void refreshThreads(thread.id);
           },
           onDelta: ({ messageId, delta }) => {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
-            setActiveThread((current) => current
-              ? {
-                  ...current,
-                  messages: current.messages.map((message) => (
-                    message.id === messageId
-                      ? { ...message, content: message.content + delta, status: "streaming" }
-                      : message
-                  ))
-                }
-              : current);
+            queueDelta(messageId, delta);
           },
           onCitations: ({ messageId, citations }) => {
             if (streamToken !== streamSequenceRef.current) {
@@ -1360,7 +1662,9 @@ export function App() {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
+            flushPendingDeltas();
             setIsStreaming(false);
+            activeStreamIdRef.current = null;
             if (streamWatchdogRef.current) {
               clearTimeout(streamWatchdogRef.current);
               streamWatchdogRef.current = null;
@@ -1372,21 +1676,33 @@ export function App() {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
+            flushPendingDeltas();
             setIsStreaming(false);
+            activeStreamIdRef.current = null;
             if (streamWatchdogRef.current) {
               clearTimeout(streamWatchdogRef.current);
               streamWatchdogRef.current = null;
             }
-            setError(message);
+            setError(errorMessage(new Error(message), "Could not complete request."));
             void refreshThreads(activeThread?.id);
           }
         }
       );
+      if (streamToken === streamSequenceRef.current) {
+        activeStreamIdRef.current = streamId;
+      } else {
+        await getRobinBridge().chat.stopStream({
+          streamId,
+          threadId: activeThread?.id
+        });
+      }
     } catch (streamError) {
       if (streamToken !== streamSequenceRef.current) {
         return;
       }
+      flushPendingDeltas();
       setIsStreaming(false);
+      activeStreamIdRef.current = null;
       if (streamWatchdogRef.current) {
         clearTimeout(streamWatchdogRef.current);
         streamWatchdogRef.current = null;
@@ -1402,16 +1718,22 @@ export function App() {
     void sendPrompt();
   }
 
-  function startNewChat() {
+  async function startNewChat() {
+    if (isStreaming) {
+      await stopPendingResponse(undefined, false);
+    }
     setActiveThread(null);
     setError(null);
     setPendingAttachments([]);
     setScreen("chat");
   }
 
-  function selectThread(id: string) {
+  async function selectThread(id: string) {
+    if (isStreaming) {
+      await stopPendingResponse(undefined, false);
+    }
     setScreen("chat");
-    void refreshThreads(id);
+    await refreshThreads(id);
   }
 
   async function deleteThread(id: string) {
@@ -1537,7 +1859,7 @@ export function App() {
           className="toolbar-brand"
           title="New chat"
           aria-label="New chat"
-          onClick={startNewChat}
+          onClick={() => { void startNewChat(); }}
         >
           robin
         </button>
@@ -1556,40 +1878,181 @@ export function App() {
 
       <div className="chat-workspace">
         <aside className={`chat-sidebar${sidebarOpen ? " chat-sidebar-open" : ""}`}>
-          <div className="chat-sidebar-head-row">
-            <div className="chat-sidebar-head">Chats</div>
+          <div className="sidebar-nav-grid">
             <button
               type="button"
-              className="chat-sidebar-new"
-              title="New chat"
-              aria-label="New chat"
-              onClick={startNewChat}
+              className={`sidebar-nav-cell${sidebarTab === "chats" ? " sidebar-nav-cell-active" : ""}`}
+              onClick={() => setSidebarTab("chats")}
             >
-              <IconPlus />
+              <IconChat />
+              <span>Chats</span>
+            </button>
+            <button
+              type="button"
+              className={`sidebar-nav-cell${sidebarTab === "todos" ? " sidebar-nav-cell-active" : ""}`}
+              onClick={() => setSidebarTab("todos")}
+            >
+              <IconTodo />
+              <span>Todos</span>
+            </button>
+            <button
+              type="button"
+              className={`sidebar-nav-cell sidebar-nav-cell-disabled${sidebarTab === "notes" ? " sidebar-nav-cell-active" : ""}`}
+              onClick={() => setSidebarTab("notes")}
+            >
+              <IconNote />
+              <span>Notes</span>
+              <span className="sidebar-nav-soon">soon</span>
+            </button>
+            <button
+              type="button"
+              className={`sidebar-nav-cell sidebar-nav-cell-disabled${sidebarTab === "calendar" ? " sidebar-nav-cell-active" : ""}`}
+              onClick={() => setSidebarTab("calendar")}
+            >
+              <IconCalendar />
+              <span>Calendar</span>
+              <span className="sidebar-nav-soon">soon</span>
             </button>
           </div>
-          <div className="chat-sidebar-list">
-            {threads.length > 0 ? (
-              threads.map((thread) => (
+
+          {sidebarTab === "chats" && (
+            <>
+              <div className="chat-sidebar-head-row">
+                <div className="chat-sidebar-head">Chats</div>
                 <button
-                  key={thread.id}
-                  className={`chat-sidebar-item${activeThread?.id === thread.id ? " chat-sidebar-item-active" : ""}`}
-                  onClick={() => selectThread(thread.id)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    if (!window.confirm("Delete this chat?")) {
-                      return;
-                    }
-                    void deleteThread(thread.id);
-                  }}
+                  type="button"
+                  className="chat-sidebar-new"
+                  title="New chat"
+                  aria-label="New chat"
+                  onClick={() => { void startNewChat(); }}
                 >
-                  {thread.title || thread.preview || "Untitled"}
+                  <IconPlus />
                 </button>
-              ))
-            ) : (
-              <p className="chat-sidebar-empty">No conversations yet</p>
-            )}
-          </div>
+              </div>
+              <div className="chat-sidebar-list">
+                {threads.length > 0 ? (
+                  threads.map((thread) => (
+                    <button
+                      key={thread.id}
+                      className={`chat-sidebar-item${activeThread?.id === thread.id ? " chat-sidebar-item-active" : ""}`}
+                      onClick={() => { void selectThread(thread.id); }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (!window.confirm("Delete this chat?")) {
+                          return;
+                        }
+                        void deleteThread(thread.id);
+                      }}
+                    >
+                      {thread.title || thread.preview || "Untitled"}
+                    </button>
+                  ))
+                ) : (
+                  <p className="chat-sidebar-empty">No conversations yet</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {sidebarTab === "todos" && (
+            <div className="todo-panel">
+              <div className="todo-add-row">
+                <input
+                  className="todo-add-input"
+                  placeholder="Add a todo..."
+                  value={newTodoTitle}
+                  onChange={(e) => setNewTodoTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void createTodo();
+                    }
+                  }}
+                />
+              </div>
+              <div className="todo-list">
+                {todos.length > 0 ? (
+                  todos.map((todo) => (
+                    <div
+                      key={todo.id}
+                      className={`todo-item${dragOverTodoId === todo.id ? " todo-item-drag-over" : ""}`}
+                      draggable
+                      onDragStart={() => setDraggedTodoId(todo.id)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOverTodoId(todo.id);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverTodoId === todo.id) setDragOverTodoId(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        void handleTodoDrop(todo.id);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedTodoId(null);
+                        setDragOverTodoId(null);
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className={`todo-check${todo.completed ? " todo-check-done" : ""}`}
+                        onClick={() => { void toggleTodo(todo.id, !todo.completed); }}
+                      >
+                        {todo.completed && <IconCheck />}
+                      </button>
+                      {editingTodoId === todo.id ? (
+                        <input
+                          className="todo-edit-input"
+                          value={editingTodoTitle}
+                          autoFocus
+                          onChange={(e) => setEditingTodoTitle(e.target.value)}
+                          onBlur={() => { void saveTodoTitle(todo.id, editingTodoTitle); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void saveTodoTitle(todo.id, editingTodoTitle);
+                            }
+                            if (e.key === "Escape") {
+                              setEditingTodoId(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className={`todo-title${todo.completed ? " todo-title-done" : ""}`}
+                          onDoubleClick={() => {
+                            setEditingTodoId(todo.id);
+                            setEditingTodoTitle(todo.title);
+                          }}
+                        >
+                          {todo.title}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="todo-delete"
+                        title="Delete"
+                        onClick={() => { void deleteTodoItem(todo.id); }}
+                      >
+                        <IconClose />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="todo-empty">No todos yet</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {(sidebarTab === "notes" || sidebarTab === "calendar") && (
+            <div className="coming-soon-panel">
+              <p className="coming-soon-label">
+                {sidebarTab === "notes" ? "Notes" : "Calendar"} coming soon
+              </p>
+            </div>
+          )}
           <div className="chat-sidebar-footer">
             <button
               className={`chat-sidebar-settings${screen === "settings" ? " chat-sidebar-settings-active" : ""}`}
@@ -1707,12 +2170,58 @@ export function App() {
                                 const providerModels = cloudModelsByProvider[provider.id] ?? [];
                                 const providerModelsLoading = cloudModelsLoadingByProvider[provider.id];
                                 const providerModelsError = cloudModelsErrorByProvider[provider.id];
+                                const isOpenRouter = provider.id === "openrouter";
 
                                 return (
                                   <section key={provider.id} className="settings-cloud-provider-group">
                                     <p className="settings-cloud-provider-name">{provider.label}</p>
                                     {!keyConfigured ? (
                                       <p className="setting-note setting-note-tight">Add valid API key first.</p>
+                                    ) : isOpenRouter ? (
+                                      <>
+                                        <form
+                                          className="settings-openrouter-form"
+                                          onSubmit={(event) => {
+                                            event.preventDefault();
+                                            void addOpenRouterModel();
+                                          }}
+                                        >
+                                          <input
+                                            className="field-input settings-openrouter-input"
+                                            value={openRouterModelDraft}
+                                            placeholder="e.g. openai/gpt-5.2-mini"
+                                            autoCapitalize="off"
+                                            autoCorrect="off"
+                                            spellCheck={false}
+                                            onChange={(event) => setOpenRouterModelDraft(event.target.value)}
+                                          />
+                                          <button
+                                            type="submit"
+                                            className="inline-action-button"
+                                            disabled={!openRouterModelDraft.trim()}
+                                          >
+                                            Add
+                                          </button>
+                                        </form>
+                                        {selectedForProvider.length === 0 ? (
+                                          <p className="setting-note setting-note-tight">Add model IDs you want in chat.</p>
+                                        ) : (
+                                          <div className="settings-openrouter-model-list">
+                                            {selectedForProvider.map((modelId) => (
+                                              <div key={modelId} className="settings-openrouter-model-row">
+                                                <span>{modelId}</span>
+                                                <button
+                                                  type="button"
+                                                  className="settings-openrouter-remove"
+                                                  onClick={() => { void removeOpenRouterModel(modelId); }}
+                                                >
+                                                  Remove
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </>
                                     ) : providerModelsLoading ? (
                                       <p className="setting-note setting-note-tight">Loading available models...</p>
                                     ) : providerModelsError ? (
@@ -1768,6 +2277,9 @@ export function App() {
                                   className="field-input custom-local-model-input"
                                   value={customLocalModelDraft}
                                   placeholder="e.g. qwen2.5:7b"
+                                  autoCapitalize="off"
+                                  autoCorrect="off"
+                                  spellCheck={false}
                                   onChange={(event) => setCustomLocalModelDraft(event.target.value)}
                                 />
                                 <button
@@ -1902,6 +2414,9 @@ export function App() {
                         <input
                           className="field-input"
                           value={shortcutDraft}
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
                           onChange={(event) => setShortcutDraft(event.target.value)}
                           onBlur={() => { void saveShortcutDraft(); }}
                           onKeyDown={(event) => {
@@ -2011,7 +2526,6 @@ export function App() {
                         key={message.id}
                         className={`chat-msg ${message.role === "user" ? "chat-msg-user" : "chat-msg-assistant"}${message.status === "streaming" ? " chat-msg-streaming" : ""}`}
                       >
-                        <span className="chat-msg-role">{message.role === "assistant" ? "Robin" : "You"}</span>
                         <div className="chat-msg-body">
                           {message.attachments?.length ? (
                             <div className="chat-msg-attachments">
@@ -2051,6 +2565,10 @@ export function App() {
                   </>
                 ) : (
                   <div className="new-tab-state">
+                    <div className="bat-signal" aria-hidden="true">
+                      <div className="bat-signal-beam" />
+                      <div className="bat-signal-beam-soft" />
+                    </div>
                     <h1 className="greeting-hi">
                       Hi, <span className="greeting-name">{displayName}</span>
                     </h1>
@@ -2078,6 +2596,9 @@ export function App() {
                     placeholder="Ask Robin..."
                     rows={1}
                     value={prompt}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     onChange={(event) => setPrompt(event.target.value)}
                     onPaste={(event) => {
                       const pastedImages = Array.from(event.clipboardData?.files ?? [])
@@ -2149,21 +2670,36 @@ export function App() {
                           onChange={setCloudModeDraft}
                         />
                       ) : null}
-                      <button type="submit" className="send-btn" disabled={!prompt.trim() && pendingAttachments.length === 0}>
-                        <IconSend />
+                      <button
+                        type={isStreaming ? "button" : "submit"}
+                        className={`send-btn${isStreaming ? " send-btn-stop" : ""}`}
+                        disabled={isStreaming ? false : (!prompt.trim() && pendingAttachments.length === 0)}
+                        aria-label={isStreaming ? "Stop response" : "Send message"}
+                        title={isStreaming ? "Stop response" : "Send message"}
+                        onClick={() => {
+                          if (isStreaming) {
+                            void stopPendingResponse();
+                          }
+                        }}
+                      >
+                        {isStreaming ? <IconStop /> : <IconSend />}
                       </button>
                     </div>
-                    <div className="composer-cloud-notes">
-                      {isCloudProviderSelected ? (
-                        selectedCloudProviderModelsLoading ? (
+                    {isCloudProviderSelected ? (
+                      selectedCloudProviderModelsLoading ? (
+                        <div className="composer-cloud-notes">
                           <p className="composer-cloud-note">Loading models...</p>
-                        ) : selectedCloudProviderModelsError ? (
+                        </div>
+                      ) : selectedCloudProviderModelsError ? (
+                        <div className="composer-cloud-notes">
                           <p className="composer-cloud-note composer-cloud-note-error">{selectedCloudProviderModelsError}</p>
-                        ) : selectedPinnedModels.length === 0 ? (
+                        </div>
+                      ) : selectedPinnedModels.length === 0 ? (
+                        <div className="composer-cloud-notes">
                           <p className="composer-cloud-note">Pick your cloud models in Settings.</p>
-                        ) : null
-                      ) : null}
-                    </div>
+                        </div>
+                      ) : null
+                    ) : null}
                   </div>
                 </div>
               </form>

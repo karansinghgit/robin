@@ -1,4 +1,5 @@
-import { BrowserWindow, Menu, Tray, nativeImage, screen } from "electron";
+import path from "node:path";
+import { app, BrowserWindow, Menu, Tray, nativeImage, screen } from "electron";
 
 export interface PlatformShellOptions {
   windowUrl: string;
@@ -9,20 +10,33 @@ export interface PlatformShellOptions {
 }
 
 function createTrayImage() {
-  const svg = `
+  const assetCandidates = [
+    path.join(app.getAppPath(), "assets", "image.png"),
+    path.join(process.cwd(), "assets", "image.png")
+  ];
+
+  for (const iconPath of assetCandidates) {
+    const image = nativeImage.createFromPath(iconPath);
+    if (!image.isEmpty()) {
+      return image.resize({ width: 18, height: 18 });
+    }
+  }
+
+  const fallbackSvg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
       <path d="M10 2.5c-.7 1.3-1.5 2.1-2.4 2.5-1.1.4-2.2.2-3.5-.6-.2 1-.7 1.9-1.4 2.6-.8.8-1.6 1.2-2.5 1.2.4.9.5 1.9.2 2.8-.2.9-.8 1.8-1.5 2.6 1.3-.2 2.4 0 3.4.4 1 .5 1.8 1.3 2.4 2.6.9-1 2-1.4 3.3-1.4 1.3 0 2.4.4 3.4 1.4.6-1.3 1.4-2.1 2.4-2.6 1-.4 2.1-.6 3.4-.4-.8-.8-1.3-1.7-1.6-2.6-.2-.9-.2-1.9.2-2.8-.9 0-1.8-.4-2.5-1.2-.8-.8-1.2-1.6-1.4-2.6-1.3.8-2.4 1-3.5.6-.9-.4-1.7-1.2-2.4-2.5Z" fill="black"/>
     </svg>
   `.trim();
-  const image = nativeImage
-    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`)
+
+  const fallbackImage = nativeImage
+    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString("base64")}`)
     .resize({ width: 18, height: 18 });
 
   if (process.platform === "darwin") {
-    image.setTemplateImage(true);
+    fallbackImage.setTemplateImage(true);
   }
 
-  return image;
+  return fallbackImage;
 }
 
 export class PlatformShell {

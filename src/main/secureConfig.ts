@@ -1,9 +1,15 @@
 import { app, safeStorage } from "electron";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { CLOUD_PROVIDER_IDS, CloudProviderId } from "../shared/contracts";
 
 interface SecretFile {
+  providerApiKeys?: Partial<Record<CloudProviderId, string>>;
   perplexityApiKey?: string;
+}
+
+interface NormalizedSecretFile {
+  providerApiKeys: Partial<Record<CloudProviderId, string>>;
 }
 
 export class SecureConfig {
@@ -15,18 +21,30 @@ export class SecureConfig {
     try {
       await readFile(this.filePath, "utf8");
     } catch {
-      await this.writeSecrets({});
+      await this.writeSecrets({ providerApiKeys: {} });
     }
   }
 
   async hasPerplexityApiKey(): Promise<boolean> {
-    const secrets = await this.readSecrets();
-    return Boolean(secrets.perplexityApiKey);
+    return this.hasProviderApiKey("perplexity");
   }
 
   async getPerplexityApiKey(): Promise<string | null> {
+    return this.getProviderApiKey("perplexity");
+  }
+
+  async setPerplexityApiKey(apiKey: string): Promise<void> {
+    await this.setProviderApiKey("perplexity", apiKey);
+  }
+
+  async hasProviderApiKey(provider: CloudProviderId): Promise<boolean> {
     const secrets = await this.readSecrets();
-    const encoded = secrets.perplexityApiKey;
+    return Boolean(secrets.providerApiKeys[provider]);
+  }
+
+  async getProviderApiKey(provider: CloudProviderId): Promise<string | null> {
+    const secrets = await this.readSecrets();
+    const encoded = secrets.providerApiKeys[provider];
     if (!encoded) {
       return null;
     }
@@ -35,24 +53,44 @@ export class SecureConfig {
     return decrypted.trim() || null;
   }
 
-  async setPerplexityApiKey(apiKey: string): Promise<void> {
+  async setProviderApiKey(provider: CloudProviderId, apiKey: string): Promise<void> {
     this.assertEncryption();
     const secrets = await this.readSecrets();
     const encrypted = safeStorage.encryptString(apiKey.trim()).toString("base64");
-    secrets.perplexityApiKey = encrypted;
+    secrets.providerApiKeys[provider] = encrypted;
     await this.writeSecrets(secrets);
   }
 
-  private async readSecrets(): Promise<SecretFile> {
+  async getConfiguredProviderMap(): Promise<Record<CloudProviderId, boolean>> {
+    const secrets = await this.readSecrets();
+    return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+      result[providerId] = Boolean(secrets.providerApiKeys[providerId]);
+      return result;
+    }, {} as Record<CloudProviderId, boolean>);
+  }
+
+  private normalizeSecrets(raw: SecretFile): NormalizedSecretFile {
+    const providerApiKeys: Partial<Record<CloudProviderId, string>> = {
+      ...(raw.providerApiKeys ?? {})
+    };
+
+    if (raw.perplexityApiKey && !providerApiKeys.perplexity) {
+      providerApiKeys.perplexity = raw.perplexityApiKey;
+    }
+
+    return { providerApiKeys };
+  }
+
+  private async readSecrets(): Promise<NormalizedSecretFile> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return JSON.parse(raw) as SecretFile;
+      return this.normalizeSecrets(JSON.parse(raw) as SecretFile);
     } catch {
-      return {};
+      return { providerApiKeys: {} };
     }
   }
 
-  private async writeSecrets(secrets: SecretFile): Promise<void> {
+  private async writeSecrets(secrets: NormalizedSecretFile): Promise<void> {
     await writeFile(this.filePath, JSON.stringify(secrets, null, 2), "utf8");
   }
 

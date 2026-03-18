@@ -12,7 +12,9 @@ const CHANNELS = {
   streamEvent: "chat:stream-event",
   providerStatus: "providers:get-status",
   saveConfig: "providers:save-config",
-  ollamaDetect: "ollama:detect"
+  ollamaDetect: "ollama:detect",
+  ollamaCatalog: "ollama:list-catalog",
+  ollamaPull: "ollama:pull-model"
 } as const;
 
 const bridge: RobinBridge = {
@@ -69,7 +71,9 @@ const bridge: RobinBridge = {
     saveConfig: async (config: SaveConfigInput) => ipcRenderer.invoke(CHANNELS.saveConfig, config)
   },
   ollama: {
-    detect: async () => ipcRenderer.invoke(CHANNELS.ollamaDetect)
+    detect: async () => ipcRenderer.invoke(CHANNELS.ollamaDetect),
+    listCatalog: async (limit?: number) => ipcRenderer.invoke(CHANNELS.ollamaCatalog, limit),
+    pullModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaPull, model)
   }
 };
 

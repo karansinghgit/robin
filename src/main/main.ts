@@ -17,7 +17,9 @@ const IPC_CHANNELS = {
   streamEvent: "chat:stream-event",
   providerStatus: "providers:get-status",
   saveConfig: "providers:save-config",
-  ollamaDetect: "ollama:detect"
+  ollamaDetect: "ollama:detect",
+  ollamaCatalog: "ollama:list-catalog",
+  ollamaPull: "ollama:pull-model"
 } as const;
 
 let shell: PlatformShell;
@@ -149,6 +151,8 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle(IPC_CHANNELS.providerStatus, async () => providerService.getStatus());
   ipcMain.handle(IPC_CHANNELS.saveConfig, async (_event, config: SaveConfigInput) => providerService.saveConfig(config));
   ipcMain.handle(IPC_CHANNELS.ollamaDetect, async () => providerService.detectOllama());
+  ipcMain.handle(IPC_CHANNELS.ollamaCatalog, async (_event, limit?: number) => providerService.listOllamaCatalog(limit));
+  ipcMain.handle(IPC_CHANNELS.ollamaPull, async (_event, model: string) => providerService.pullOllamaModel(model));
 
   ipcMain.handle(IPC_CHANNELS.startStream, async (event, request: ChatStreamRequest) => {
     const sender = event.sender;

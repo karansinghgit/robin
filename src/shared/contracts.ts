@@ -1,5 +1,15 @@
 export type AssistantMode = "search" | "local";
 
+export const CLOUD_PROVIDER_IDS = [
+  "openai",
+  "anthropic",
+  "google",
+  "perplexity",
+  "openrouter"
+] as const;
+
+export type CloudProviderId = (typeof CLOUD_PROVIDER_IDS)[number];
+
 export type MessageRole = "system" | "user" | "assistant";
 
 export interface Citation {
@@ -50,10 +60,35 @@ export interface OllamaStatus {
   downloadUrl: string;
 }
 
+export interface LocalModelCatalogItem {
+  id: string;
+  model: string;
+  title: string;
+  description: string;
+  sizeLabel: string;
+  sizes: string[];
+  paramsBillions: number;
+  estimatedSizeMb: number;
+  minRamGb: number;
+  pulls: string;
+  sourceUrl: string;
+}
+
+export interface ModelPullResult {
+  model: string;
+  status: string;
+  completedBytes?: number;
+  totalBytes?: number;
+  digest?: string;
+}
+
 export interface ProviderStatus {
   onboardingCompleted: boolean;
   preferredMode: AssistantMode;
   shortcut: string;
+  systemMemoryGb: number;
+  activeCloudProvider: CloudProviderId;
+  cloudProviderKeys: Record<CloudProviderId, boolean>;
   perplexity: {
     configured: boolean;
     model: string;
@@ -75,6 +110,8 @@ export interface SaveConfigInput {
   perplexityPreset?: string;
   ollamaBaseUrl?: string;
   ollamaModel?: string;
+  activeCloudProvider?: CloudProviderId;
+  providerApiKeys?: Partial<Record<CloudProviderId, string>>;
 }
 
 export type ChatStreamEvent =
@@ -139,5 +176,7 @@ export interface RobinBridge {
   };
   ollama: {
     detect: () => Promise<OllamaStatus>;
+    listCatalog: (limit?: number) => Promise<LocalModelCatalogItem[]>;
+    pullModel: (model: string) => Promise<ModelPullResult>;
   };
 }

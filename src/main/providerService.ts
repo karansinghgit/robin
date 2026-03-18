@@ -1,9 +1,13 @@
 import {
+  CLOUD_PROVIDER_IDS,
+  CloudProviderId,
   ChatMessage,
   ChatStreamEvent,
   ChatStreamRequest,
   Citation,
   ConversationThread,
+  LocalModelCatalogItem,
+  ModelPullResult,
   ProviderStatus,
   SaveConfigInput
 } from "../shared/contracts";
@@ -11,6 +15,7 @@ import { SecureConfig } from "./secureConfig";
 import { AppStorage, buildThreadTitle } from "./storage";
 import { OllamaProvider } from "./providers/ollamaProvider";
 import { PerplexityProvider } from "./providers/perplexityProvider";
+import os from "node:os";
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -37,6 +42,7 @@ export class ProviderService {
 
   async getStatus(): Promise<ProviderStatus> {
     const settings = await this.storage.getSettings();
+    const cloudProviderKeys = await this.secureConfig.getConfiguredProviderMap();
     const ollama = await this.ollama.detect(
       settings.providers.ollama.baseUrl,
       settings.providers.ollama.model || undefined
@@ -46,8 +52,11 @@ export class ProviderService {
       onboardingCompleted: settings.onboardingCompleted,
       preferredMode: settings.preferredMode,
       shortcut: settings.shortcut,
+      systemMemoryGb: Number((os.totalmem() / (1024 ** 3)).toFixed(1)),
+      activeCloudProvider: settings.providers.cloud.activeProvider,
+      cloudProviderKeys,
       perplexity: {
-        configured: await this.secureConfig.hasPerplexityApiKey(),
+        configured: cloudProviderKeys.perplexity,
         model: settings.providers.perplexity.model,
         preset: settings.providers.perplexity.preset
       },
@@ -57,7 +66,20 @@ export class ProviderService {
 
   async saveConfig(config: SaveConfigInput): Promise<ProviderStatus> {
     if (config.perplexityApiKey) {
-      await this.secureConfig.setPerplexityApiKey(config.perplexityApiKey);
+      await this.secureConfig.setProviderApiKey("perplexity", config.perplexityApiKey);
+    }
+
+    if (config.providerApiKeys) {
+      const saves: Array<Promise<void>> = [];
+      for (const providerId of CLOUD_PROVIDER_IDS) {
+        const candidate = config.providerApiKeys[providerId];
+        if (typeof candidate === "string" && candidate.trim()) {
+          saves.push(this.secureConfig.setProviderApiKey(providerId, candidate));
+        }
+      }
+      if (saves.length > 0) {
+        await Promise.all(saves);
+      }
     }
 
     await this.storage.saveSettings((current) => ({
@@ -66,6 +88,9 @@ export class ProviderService {
       preferredMode: config.preferredMode ?? current.preferredMode,
       shortcut: config.shortcut ?? current.shortcut,
       providers: {
+        cloud: {
+          activeProvider: config.activeCloudProvider ?? current.providers.cloud.activeProvider
+        },
         perplexity: {
           model: config.perplexityModel ?? current.providers.perplexity.model,
           preset: config.perplexityPreset ?? current.providers.perplexity.preset
@@ -83,6 +108,15 @@ export class ProviderService {
   async detectOllama() {
     const settings = await this.storage.getSettings();
     return this.ollama.detect(settings.providers.ollama.baseUrl, settings.providers.ollama.model || undefined);
+  }
+
+  async listOllamaCatalog(limit = 100): Promise<LocalModelCatalogItem[]> {
+    return this.ollama.listCatalog(limit);
+  }
+
+  async pullOllamaModel(model: string): Promise<ModelPullResult> {
+    const settings = await this.storage.getSettings();
+    return this.ollama.pullModel(settings.providers.ollama.baseUrl, model);
   }
 
   async streamChat(
@@ -120,10 +154,15 @@ export class ProviderService {
 
     try {
       if (request.mode === "search") {
-        const apiKey = await this.secureConfig.getPerplexityApiKey();
+        const activeCloudProvider = settings.providers.cloud.activeProvider;
+        if (activeCloudProvider !== "perplexity") {
+          throw new Error(`${this.providerLabel(activeCloudProvider)} chat is not wired yet. For now, use Perplexity in Cloud mode or switch to Local.`);
+        }
+
+        const apiKey = await this.secureConfig.getProviderApiKey("perplexity");
         if (!apiKey) {
           throw new Error(
-            "You need to configure a model to use Robin. You either need to download a model to run locally, or bring your own key from ChatGPT / Claude / Gemini / Perplexity."
+            "You need to configure a model to use Robin. You either need to download a model to run locally, or Bring Your Own Key from ChatGPT / Claude / Gemini / Perplexity."
           );
         }
         const result = await this.perplexity.streamReply({
@@ -208,6 +247,23 @@ export class ProviderService {
         messageId: assistantMessage.id,
         message: error instanceof Error ? error.message : "Unknown provider error."
       });
+    }
+  }
+
+  private providerLabel(providerId: CloudProviderId): string {
+    switch (providerId) {
+      case "openai":
+        return "OpenAI";
+      case "anthropic":
+        return "Anthropic";
+      case "google":
+        return "Google";
+      case "perplexity":
+        return "Perplexity";
+      case "openrouter":
+        return "OpenRouter";
+      default:
+        return "Cloud provider";
     }
   }
 }

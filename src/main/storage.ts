@@ -1,13 +1,16 @@
 import { app } from "electron";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ConversationThread, ThreadSummary } from "../shared/contracts";
+import { CLOUD_PROVIDER_IDS, CloudProviderId, ConversationThread, ThreadSummary } from "../shared/contracts";
 
 export interface SettingsData {
   onboardingCompleted: boolean;
   preferredMode: "search" | "local";
   shortcut: string;
   providers: {
+    cloud: {
+      activeProvider: CloudProviderId;
+    };
     perplexity: {
       model: string;
       preset: string;
@@ -24,6 +27,9 @@ const DEFAULT_SETTINGS: SettingsData = {
   preferredMode: "search",
   shortcut: "CommandOrControl+Shift+Space",
   providers: {
+    cloud: {
+      activeProvider: "perplexity"
+    },
     perplexity: {
       model: "openai/gpt-5-mini",
       preset: "pro-search"
@@ -34,6 +40,50 @@ const DEFAULT_SETTINGS: SettingsData = {
     }
   }
 };
+
+const CLOUD_PROVIDER_ID_SET = new Set<CloudProviderId>(CLOUD_PROVIDER_IDS);
+
+function normalizeSettings(raw: unknown): SettingsData {
+  const source = (raw && typeof raw === "object") ? (raw as Partial<SettingsData>) : {};
+  const sourceProviders = (source.providers ?? {}) as Partial<SettingsData["providers"]>;
+  const sourceCloud = (sourceProviders.cloud ?? {}) as Partial<SettingsData["providers"]["cloud"]>;
+  const sourcePerplexity = (sourceProviders.perplexity ?? {}) as Partial<SettingsData["providers"]["perplexity"]>;
+  const sourceOllama = (sourceProviders.ollama ?? {}) as Partial<SettingsData["providers"]["ollama"]>;
+
+  const preferredMode = source.preferredMode === "local" ? "local" : "search";
+  const shortcut = typeof source.shortcut === "string" && source.shortcut.trim()
+    ? source.shortcut
+    : DEFAULT_SETTINGS.shortcut;
+
+  return {
+    onboardingCompleted: Boolean(source.onboardingCompleted),
+    preferredMode,
+    shortcut,
+    providers: {
+      cloud: {
+        activeProvider: typeof sourceCloud.activeProvider === "string" && CLOUD_PROVIDER_ID_SET.has(sourceCloud.activeProvider as CloudProviderId)
+          ? sourceCloud.activeProvider as CloudProviderId
+          : DEFAULT_SETTINGS.providers.cloud.activeProvider
+      },
+      perplexity: {
+        model: typeof sourcePerplexity.model === "string" && sourcePerplexity.model.trim()
+          ? sourcePerplexity.model
+          : DEFAULT_SETTINGS.providers.perplexity.model,
+        preset: typeof sourcePerplexity.preset === "string" && sourcePerplexity.preset.trim()
+          ? sourcePerplexity.preset
+          : DEFAULT_SETTINGS.providers.perplexity.preset
+      },
+      ollama: {
+        baseUrl: typeof sourceOllama.baseUrl === "string" && sourceOllama.baseUrl.trim()
+          ? sourceOllama.baseUrl
+          : DEFAULT_SETTINGS.providers.ollama.baseUrl,
+        model: typeof sourceOllama.model === "string"
+          ? sourceOllama.model
+          : DEFAULT_SETTINGS.providers.ollama.model
+      }
+    }
+  };
+}
 
 interface ThreadsFile {
   threads: ConversationThread[];
@@ -51,7 +101,10 @@ export class AppStorage {
   }
 
   async getSettings(): Promise<SettingsData> {
-    return this.readJson<SettingsData>(this.settingsPath, DEFAULT_SETTINGS);
+    const raw = await this.readJson<unknown>(this.settingsPath, DEFAULT_SETTINGS);
+    const normalized = normalizeSettings(raw);
+    await this.writeJson(this.settingsPath, normalized);
+    return normalized;
   }
 
   async saveSettings(updater: (current: SettingsData) => SettingsData): Promise<SettingsData> {

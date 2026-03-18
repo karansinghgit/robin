@@ -2,6 +2,8 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon, IconSvgElement } from "@hugeicons/react";
 import "@fontsource/gochi-hand";
 import "@fontsource/dm-sans/500.css";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   AssistantMode,
   CLOUD_PROVIDER_IDS,
@@ -205,7 +207,15 @@ function safeCitationHost(rawUrl: string): string {
 
 function localStatusText(status: OllamaStatus | null): string {
   if (!status) return "Checking";
-  if (status.state === "ready") return status.version ? `Ollama ${status.version}` : "Running";
+  if (status.state === "ready") {
+    if (!status.version) return "Running";
+    const cleaned = status.version
+      .replace(/^ollama\s+version\s+is\s+/i, "")
+      .replace(/^ollama\s+version\s+/i, "")
+      .replace(/^version\s+/i, "")
+      .trim();
+    return cleaned ? `Ollama ${cleaned}` : "Running";
+  }
   if (status.state === "no_model") return "No models pulled";
   if (status.state === "not_running") return "Not running";
   return "Not installed";
@@ -851,17 +861,24 @@ export function App() {
                       ) : (
                         <>
                           <div className="setting-section">
-                            <p className="setting-title">Local Runtime</p>
-                            <div className="ollama-status">
-                              <span className={ollamaDotClass(ollamaStatus)} />
-                              <span className="ollama-label">{localStatusText(ollamaStatus)}</span>
+                            <div className="local-runtime-strip">
+                              <div className="ollama-status">
+                                <span className={ollamaDotClass(ollamaStatus)} />
+                                <span className="ollama-label">{localStatusText(ollamaStatus)}</span>
+                              </div>
+                              <p className="setting-note setting-note-tight">
+                                RAM: {status?.systemMemoryGb ? `${status.systemMemoryGb} GB` : "Unknown"}
+                              </p>
+                              <button
+                                className="ghost-button"
+                                onClick={() => { void getRobinBridge().app.openExternal(ollamaStatus?.downloadUrl ?? OLLAMA_DOWNLOAD_URL); }}
+                              >
+                                Get Ollama
+                              </button>
                             </div>
-                            <p className="setting-note">
-                              System RAM detected: {status?.systemMemoryGb ? `${status.systemMemoryGb} GB` : "Unknown"}.
-                            </p>
 
                             <form className="custom-local-model-form" onSubmit={handleCustomLocalModelSubmit}>
-                              <label className="field-label">Pull any Ollama model</label>
+                              <label className="field-label">Download a model</label>
                               <div className="custom-local-model-row">
                                 <input
                                   className="field-input custom-local-model-input"
@@ -879,6 +896,9 @@ export function App() {
                               </div>
                             </form>
 
+                            {localModels.length > 0 ? (
+                              <p className="setting-title setting-title-sub">Installed</p>
+                            ) : null}
                             {localModels.length > 0 ? (
                               <div className="installed-model-list">
                                 {localModels.map((model) => {
@@ -903,13 +923,6 @@ export function App() {
                             {localModelNotice ? (
                               <p className="setting-note setting-note-success">{localModelNotice}</p>
                             ) : null}
-
-                            <button
-                              className="ghost-button"
-                              onClick={() => { void getRobinBridge().app.openExternal(ollamaStatus?.downloadUrl ?? OLLAMA_DOWNLOAD_URL); }}
-                            >
-                              Get Ollama
-                            </button>
                           </div>
 
                           <div className="setting-section setting-section-last">
@@ -1043,7 +1056,15 @@ export function App() {
                       >
                         <span className="chat-msg-role">{message.role === "assistant" ? "Robin" : "You"}</span>
                         <div className="chat-msg-body">
-                          {message.content}
+                          {message.role === "assistant" ? (
+                            <div className="md-content">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {message.content}
+                              </ReactMarkdown>
+                            </div>
+                          ) : (
+                            message.content
+                          )}
                           {message.citations?.length ? (
                             <div className="citation-list">
                               {message.citations.map((citation) => (

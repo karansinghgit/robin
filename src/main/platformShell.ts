@@ -234,6 +234,7 @@ export class PlatformShell {
       minHeight: 620,
       show: false,
       frame: true,
+      titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
       title: "Robin",
       movable: true,
       fullscreenable: true,
@@ -253,6 +254,10 @@ export class PlatformShell {
     });
 
     this.appWindow.setMenuBarVisibility(false);
+    if (process.platform === "darwin") {
+      this.appWindow.setVibrancy("under-window");
+      this.appWindow.setBackgroundColor("#050507");
+    }
     this.appWindow.loadURL(this.options.windowUrl);
     this.appWindow.once("ready-to-show", () => {
       this.appWindow?.show();

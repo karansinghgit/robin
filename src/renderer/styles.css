@@ -411,6 +411,57 @@ button:focus-visible {
   -webkit-user-select: text;
 }
 
+.md-content > *:first-child { margin-top: 0; }
+.md-content > *:last-child { margin-bottom: 0; }
+.md-content p { margin: 0 0 8px; }
+.md-content ul,
+.md-content ol {
+  margin: 0 0 8px 16px;
+  padding: 0;
+}
+.md-content li { margin-bottom: 2px; }
+.md-content code {
+  font-family: "SF Mono", "Fira Code", ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+.md-content pre {
+  margin: 0 0 8px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+}
+.md-content pre code {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+.md-content h1,
+.md-content h2,
+.md-content h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--t1);
+}
+.md-content blockquote {
+  margin: 0 0 8px;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--t3);
+}
+.md-content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.md-content a:hover {
+  text-decoration: underline;
+}
+
 .chat-msg-user .chat-msg-body {
   background: var(--raised);
   color: var(--t1);
@@ -422,6 +473,7 @@ button:focus-visible {
   border: 1px solid var(--border);
   color: var(--t2);
   border-radius: 16px 16px 16px 4px;
+  white-space: normal;
 }
 
 .chat-msg-time {
@@ -862,7 +914,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 .ollama-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
@@ -871,6 +923,30 @@ button:focus-visible {
 .ollama-dot-off { background: var(--red); opacity: 0.6; }
 
 .ollama-label { font-size: 11px; color: var(--t2); }
+
+.local-runtime-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.01);
+  margin-bottom: 10px;
+}
+
+.local-runtime-strip .setting-note {
+  margin-bottom: 0;
+}
+
+.local-runtime-strip .ghost-button {
+  margin-left: auto;
+}
+
+.setting-title-sub {
+  margin-top: 8px;
+}
 
 .custom-local-model-form {
   margin-top: 10px;

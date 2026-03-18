@@ -94,7 +94,7 @@ async function bootstrap(): Promise<void> {
   const hideOnBlurOverride = process.env.ROBIN_HIDE_ON_BLUR;
   const shouldHideDock = hideDockOverride === "0" ? false : true;
   const shouldHideOnBlur = hideOnBlurOverride === "0" ? false : true;
-  const trayTitle = process.env.ROBIN_TRAY_TITLE || "Robin";
+  const trayTitle = process.env.ROBIN_TRAY_TITLE;
   const openOnLaunch = process.env.ROBIN_OPEN_ON_LAUNCH === "1";
 
   if (process.platform === "darwin" && shouldHideDock) {

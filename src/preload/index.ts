@@ -4,6 +4,7 @@ import { ChatStreamEvent, ChatStreamRequest, RobinBridge, SaveConfigInput } from
 const CHANNELS = {
   togglePanel: "app:toggle-panel",
   setShortcut: "app:set-shortcut",
+  profile: "app:get-profile",
   openExternal: "app:open-external",
   listThreads: "chat:list-threads",
   loadThread: "chat:load-thread",
@@ -20,6 +21,7 @@ const bridge: RobinBridge = {
       await ipcRenderer.invoke(CHANNELS.togglePanel);
     },
     setShortcut: async (accelerator) => ipcRenderer.invoke(CHANNELS.setShortcut, accelerator),
+    getProfile: async () => ipcRenderer.invoke(CHANNELS.profile),
     openExternal: async (url) => {
       await ipcRenderer.invoke(CHANNELS.openExternal, url);
     }

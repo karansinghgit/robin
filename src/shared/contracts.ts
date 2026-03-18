@@ -62,6 +62,10 @@ export interface ProviderStatus {
   ollama: OllamaStatus;
 }
 
+export interface AppProfile {
+  name: string;
+}
+
 export interface SaveConfigInput {
   onboardingCompleted?: boolean;
   preferredMode?: AssistantMode;
@@ -113,6 +117,7 @@ export interface RobinBridge {
     togglePanel: () => Promise<void>;
     setShortcut: (accelerator: string) => Promise<{ success: boolean; shortcut: string }>;
     openExternal: (url: string) => Promise<void>;
+    getProfile: () => Promise<AppProfile>;
   };
   chat: {
     streamReply: (

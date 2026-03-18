@@ -11,7 +11,7 @@ export interface PlatformShellOptions {
 function createTrayImage() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
-      <path d="M5.5 15V5h4.1c1.5 0 2.7.4 3.5 1.1.8.7 1.2 1.7 1.2 2.9 0 1.2-.4 2.2-1.2 2.9-.8.7-2 1.1-3.5 1.1H7.9V15H5.5Zm2.4-4h1.6c.8 0 1.4-.2 1.8-.5.4-.4.6-.8.6-1.5 0-.7-.2-1.2-.6-1.5-.4-.4-1-.5-1.8-.5H7.9V11Z" fill="black"/>
+      <path d="M10 2.5c-.7 1.3-1.5 2.1-2.4 2.5-1.1.4-2.2.2-3.5-.6-.2 1-.7 1.9-1.4 2.6-.8.8-1.6 1.2-2.5 1.2.4.9.5 1.9.2 2.8-.2.9-.8 1.8-1.5 2.6 1.3-.2 2.4 0 3.4.4 1 .5 1.8 1.3 2.4 2.6.9-1 2-1.4 3.3-1.4 1.3 0 2.4.4 3.4 1.4.6-1.3 1.4-2.1 2.4-2.6 1-.4 2.1-.6 3.4-.4-.8-.8-1.3-1.7-1.6-2.6-.2-.9-.2-1.9.2-2.8-.9 0-1.8-.4-2.5-1.2-.8-.8-1.2-1.6-1.4-2.6-1.3.8-2.4 1-3.5.6-.9-.4-1.7-1.2-2.4-2.5Z" fill="black"/>
     </svg>
   `.trim();
   const image = nativeImage
@@ -31,23 +31,30 @@ export class PlatformShell {
   private shortcut = "";
   private readyToShow = false;
   private pendingTrayBounds?: Electron.Rectangle;
+  private lastTrayToggleAt = 0;
 
   constructor(private readonly options: PlatformShellOptions) {}
 
   create(): BrowserWindow {
     this.panel = new BrowserWindow({
-      width: 440,
-      height: 660,
+      width: 560,
+      height: 470,
       show: false,
       frame: false,
+      movable: false,
       fullscreenable: false,
+      minimizable: false,
+      maximizable: false,
       resizable: false,
-      transparent: true,
+      skipTaskbar: true,
+      transparent: false,
+      backgroundColor: "#050507",
       hasShadow: true,
       alwaysOnTop: true,
-      vibrancy: process.platform === "darwin" ? "sidebar" : undefined,
-      visualEffectState: process.platform === "darwin" ? "active" : undefined,
-      titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
+      vibrancy: undefined,
+      visualEffectState: undefined,
+      autoHideMenuBar: true,
+      roundedCorners: process.platform === "darwin",
       webPreferences: {
         preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
         contextIsolation: true,
@@ -58,6 +65,10 @@ export class PlatformShell {
     });
 
     this.panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (process.platform === "darwin") {
+      this.panel.setWindowButtonVisibility(false);
+    }
+    this.panel.setMenuBarVisibility(false);
     this.panel.loadURL(this.options.windowUrl);
     this.panel.once("ready-to-show", () => {
       this.readyToShow = true;
@@ -73,6 +84,11 @@ export class PlatformShell {
         this.hidePanel();
       }
     });
+    this.panel.webContents.on("before-input-event", (_event, input) => {
+      if (input.type === "keyDown" && input.key === "Escape") {
+        this.hidePanel();
+      }
+    });
     this.panel.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
     this.tray = new Tray(createTrayImage());
@@ -80,14 +96,24 @@ export class PlatformShell {
     if (this.options.trayTitle) {
       this.tray.setTitle(this.options.trayTitle);
     }
-    this.tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: "Open Robin", click: () => this.togglePanel(this.tray?.getBounds()) },
-        { type: "separator" },
-        { label: "Quit", role: "quit" }
-      ])
-    );
-    this.tray.on("click", (_event, bounds) => this.togglePanel(bounds));
+    const trayMenu = Menu.buildFromTemplate([
+      { label: "Open Robin", click: () => this.openPanel(this.tray?.getBounds()) },
+      { type: "separator" },
+      { label: "Quit", role: "quit" }
+    ]);
+
+    if (process.platform === "darwin") {
+      this.tray.setContextMenu(null);
+      this.tray.on("click", (_event, bounds) => {
+        this.togglePanelFromTray(bounds);
+      });
+      this.tray.on("right-click", () => {
+        this.tray?.popUpContextMenu(trayMenu);
+      });
+    } else {
+      this.tray.setContextMenu(trayMenu);
+      this.tray.on("click", (_event, bounds) => this.togglePanelFromTray(bounds));
+    }
 
     this.shortcut = this.options.defaultShortcut;
 
@@ -116,8 +142,28 @@ export class PlatformShell {
     this.showPanel(trayBounds ?? this.tray?.getBounds());
   }
 
+  openPanel(trayBounds?: Electron.Rectangle): void {
+    if (!this.panel) {
+      return;
+    }
+    if (this.panel.isVisible()) {
+      this.panel.focus();
+      return;
+    }
+    this.showPanel(trayBounds ?? this.tray?.getBounds());
+  }
+
   hidePanel(): void {
     this.panel?.hide();
+  }
+
+  private togglePanelFromTray(trayBounds?: Electron.Rectangle): void {
+    const now = Date.now();
+    if (now - this.lastTrayToggleAt < 180) {
+      return;
+    }
+    this.lastTrayToggleAt = now;
+    this.togglePanel(trayBounds);
   }
 
   private showPanel(trayBounds?: Electron.Rectangle): void {
@@ -137,7 +183,7 @@ export class PlatformShell {
         y: Math.round(trayBounds.y)
       });
       const x = Math.round(trayBounds.x + trayBounds.width / 2 - width / 2);
-      const y = Math.round(display.workArea.y + 28);
+      const y = Math.round(trayBounds.y + trayBounds.height);
       this.panel.setPosition(
         Math.min(Math.max(x, display.workArea.x + 12), display.workArea.x + display.workArea.width - width - 12),
         y

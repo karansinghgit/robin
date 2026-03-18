@@ -56,9 +56,10 @@ fi
 
 export ROBIN_FORGE_PORT="$DEV_PORT"
 export ROBIN_FORGE_LOGGER_PORT="$LOGGER_PORT"
-export ROBIN_HIDE_DOCK="0"
-export ROBIN_HIDE_ON_BLUR="0"
+export ROBIN_HIDE_DOCK="1"
+export ROBIN_HIDE_ON_BLUR="1"
 export ROBIN_TRAY_TITLE="Robin"
+export ROBIN_OPEN_ON_LAUNCH="0"
 
 echo "Starting Robin dev server on port ${ROBIN_FORGE_PORT} (logger: ${ROBIN_FORGE_LOGGER_PORT})..."
 

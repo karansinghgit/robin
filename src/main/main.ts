@@ -1,4 +1,5 @@
 import { app, globalShortcut, ipcMain, shell as electronShell } from "electron";
+import os from "node:os";
 import { AppStorage } from "./storage";
 import { SecureConfig } from "./secureConfig";
 import { PlatformShell } from "./platformShell";
@@ -8,6 +9,8 @@ import { ChatStreamEvent, ChatStreamRequest, SaveConfigInput } from "../shared/c
 const IPC_CHANNELS = {
   togglePanel: "app:toggle-panel",
   setShortcut: "app:set-shortcut",
+  profile: "app:get-profile",
+  openExternal: "app:open-external",
   listThreads: "chat:list-threads",
   loadThread: "chat:load-thread",
   startStream: "chat:stream-start",
@@ -19,6 +22,30 @@ const IPC_CHANNELS = {
 
 let shell: PlatformShell;
 let activeShortcut = "";
+
+function toDisplayName(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ");
+  const firstPart = cleaned.split(" ")[0] ?? "";
+
+  if (!firstPart) {
+    return "there";
+  }
+
+  return `${firstPart.charAt(0).toUpperCase()}${firstPart.slice(1).toLowerCase()}`;
+}
+
+function getProfileName(): string {
+  try {
+    const username = os.userInfo().username || process.env.USER || process.env.USERNAME || "";
+    return toDisplayName(username);
+  } catch {
+    return "there";
+  }
+}
 
 function registerShortcut(shortcut: string): boolean {
   const previousShortcut = activeShortcut;
@@ -65,11 +92,10 @@ async function bootstrap(): Promise<void> {
 
   const hideDockOverride = process.env.ROBIN_HIDE_DOCK;
   const hideOnBlurOverride = process.env.ROBIN_HIDE_ON_BLUR;
-  const shouldHideDock =
-    hideDockOverride === "1" ? true : hideDockOverride === "0" ? false : app.isPackaged;
-  const shouldHideOnBlur =
-    hideOnBlurOverride === "1" ? true : hideOnBlurOverride === "0" ? false : app.isPackaged;
-  const trayTitle = process.env.ROBIN_TRAY_TITLE || (!app.isPackaged ? "Robin" : undefined);
+  const shouldHideDock = hideDockOverride === "0" ? false : true;
+  const shouldHideOnBlur = hideOnBlurOverride === "0" ? false : true;
+  const trayTitle = process.env.ROBIN_TRAY_TITLE || "Robin";
+  const openOnLaunch = process.env.ROBIN_OPEN_ON_LAUNCH === "1";
 
   if (process.platform === "darwin" && shouldHideDock) {
     app.dock?.hide();
@@ -93,7 +119,7 @@ async function bootstrap(): Promise<void> {
   shell.create();
   registerShortcut(settings.shortcut);
 
-  if (!app.isPackaged) {
+  if (openOnLaunch) {
     shell.togglePanel();
   }
 
@@ -111,7 +137,10 @@ async function bootstrap(): Promise<void> {
     }
     return result;
   });
-  ipcMain.handle("app:open-external", async (_event, url: string) => {
+  ipcMain.handle(IPC_CHANNELS.profile, async () => ({
+    name: getProfileName()
+  }));
+  ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, url: string) => {
     await electronShell.openExternal(url);
   });
 
@@ -140,7 +169,9 @@ async function bootstrap(): Promise<void> {
   });
 
   app.on("activate", () => {
-    shell.togglePanel();
+    if (process.platform !== "darwin") {
+      shell.openPanel();
+    }
   });
 }
 

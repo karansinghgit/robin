@@ -80,7 +80,7 @@ function buildBaseUrlCandidates(baseUrl: string): string[] {
 }
 
 function formatReachabilityError(baseUrl: string): string {
-  return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Start the Ollama app and try again.`;
+  return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Open Ollama (or run 'ollama serve') and try again.`;
 }
 
 export class OllamaProvider {

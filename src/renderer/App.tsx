@@ -1,6 +1,7 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon, IconSvgElement } from "@hugeicons/react";
 import "@fontsource/gochi-hand";
+import "@fontsource/dm-sans/500.css";
 import {
   AssistantMode,
   CLOUD_PROVIDER_IDS,
@@ -550,8 +551,7 @@ export function App() {
     setCustomLocalModelDraft("");
   }
 
-  async function handleSend(event: FormEvent) {
-    event.preventDefault();
+  async function sendPrompt() {
     if (!prompt.trim() || isStreaming) return;
     const parsed = parseModelKey(activeModelDraft);
     if (parsed.mode === "local" && !parsed.model) {
@@ -609,6 +609,11 @@ export function App() {
       setPrompt(text);
       setError(errorMessage(streamError, "Could not start chat. Please retry."));
     }
+  }
+
+  function handleComposerSubmit(event: FormEvent) {
+    event.preventDefault();
+    void sendPrompt();
   }
 
   function startNewChat() {
@@ -994,7 +999,7 @@ export function App() {
                 )}
               </section>
 
-              <form className="composer" onSubmit={handleSend}>
+              <form className="composer" onSubmit={handleComposerSubmit}>
                 <div className="composer-box">
                   <textarea
                     className="composer-input"
@@ -1005,7 +1010,7 @@ export function App() {
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
-                        void handleSend(event);
+                        void sendPrompt();
                       }
                     }}
                   />

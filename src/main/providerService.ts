@@ -150,7 +150,7 @@ export class ProviderService {
       throw new Error("Ollama is not installed yet. Install it from ollama.com/download and retry.");
     }
     if (ollamaStatus.state === "not_running") {
-      throw new Error(`Could not reach Ollama at ${ollamaStatus.baseUrl}. Start the Ollama app and retry.`);
+      throw new Error(`Could not reach Ollama at ${ollamaStatus.baseUrl}. Open Ollama (or run 'ollama serve') and retry.`);
     }
 
     return this.ollama.pullModel(ollamaStatus.baseUrl || providers.ollama.baseUrl, model);

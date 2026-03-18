@@ -27,10 +27,5 @@ export const CURATED_CLOUD_MODELS: Record<CloudProviderId, CloudModelCatalogItem
     { id: "sonar-pro", modes: [] },
     { id: "sonar", modes: [] }
   ],
-  openrouter: [
-    { id: "openai/gpt-5.2-mini", modes: [] },
-    { id: "openai/gpt-5.2-codex", modes: [] },
-    { id: "anthropic/claude-sonnet-4-5", modes: [] },
-    { id: "google/gemini-2.5-pro", modes: [] }
-  ]
+  openrouter: []
 };

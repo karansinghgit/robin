@@ -90,6 +90,7 @@ function createTrayImage() {
 export class PlatformShell {
   private tray: Tray | null = null;
   private panel: BrowserWindow | null = null;
+  private appWindow: BrowserWindow | null = null;
   private shortcut = "";
   private readyToShow = false;
   private pendingTrayBounds?: Electron.Rectangle;
@@ -217,6 +218,51 @@ export class PlatformShell {
 
   hidePanel(): void {
     this.panel?.hide();
+  }
+
+  openAppWindow(): void {
+    if (this.appWindow && !this.appWindow.isDestroyed()) {
+      this.appWindow.show();
+      this.appWindow.focus();
+      return;
+    }
+
+    this.appWindow = new BrowserWindow({
+      width: 1060,
+      height: 760,
+      minWidth: 860,
+      minHeight: 620,
+      show: false,
+      frame: true,
+      title: "Robin",
+      movable: true,
+      fullscreenable: true,
+      minimizable: true,
+      maximizable: true,
+      resizable: true,
+      skipTaskbar: false,
+      backgroundColor: "#050507",
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+        contextIsolation: true,
+        nodeIntegration: false,
+        devTools: true,
+        backgroundThrottling: false
+      }
+    });
+
+    this.appWindow.setMenuBarVisibility(false);
+    this.appWindow.loadURL(this.options.windowUrl);
+    this.appWindow.once("ready-to-show", () => {
+      this.appWindow?.show();
+      this.appWindow?.focus();
+    });
+    this.appWindow.on("closed", () => {
+      this.appWindow = null;
+    });
+
+    this.hidePanel();
   }
 
   private togglePanelFromTray(trayBounds?: Electron.Rectangle): void {

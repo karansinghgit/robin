@@ -152,6 +152,7 @@ export type ChatStreamEvent =
 export interface RobinBridge {
   app: {
     togglePanel: () => Promise<void>;
+    openWindow: () => Promise<void>;
     setShortcut: (accelerator: string) => Promise<{ success: boolean; shortcut: string }>;
     openExternal: (url: string) => Promise<void>;
     getProfile: () => Promise<AppProfile>;

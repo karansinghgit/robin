@@ -8,6 +8,7 @@ import { ChatStreamEvent, ChatStreamRequest, SaveConfigInput } from "../shared/c
 
 const IPC_CHANNELS = {
   togglePanel: "app:toggle-panel",
+  openWindow: "app:open-window",
   setShortcut: "app:set-shortcut",
   profile: "app:get-profile",
   openExternal: "app:open-external",
@@ -127,6 +128,9 @@ async function bootstrap(): Promise<void> {
 
   ipcMain.handle(IPC_CHANNELS.togglePanel, async () => {
     shell.togglePanel();
+  });
+  ipcMain.handle(IPC_CHANNELS.openWindow, async () => {
+    shell.openAppWindow();
   });
 
   ipcMain.handle(IPC_CHANNELS.setShortcut, async (_event, shortcut: string) => {

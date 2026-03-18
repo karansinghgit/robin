@@ -607,7 +607,7 @@ button:focus-visible {
   padding: 14px 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
@@ -623,10 +623,15 @@ button:focus-visible {
 .settings-pane-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: content-box; }
 
 .settings-accordion {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--elevated);
-  overflow: hidden;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.settings-accordion:first-child {
+  border-top: 1px solid var(--border);
 }
 
 .settings-accordion-trigger {
@@ -634,7 +639,7 @@ button:focus-visible {
   border: none;
   background: transparent;
   color: var(--t1);
-  padding: 11px 14px;
+  padding: 14px 2px;
   font-family: inherit;
   display: flex;
   align-items: center;
@@ -643,14 +648,14 @@ button:focus-visible {
 }
 
 .settings-accordion-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 15px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
 }
 
 .settings-accordion-arrow {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: grid;
   place-items: center;
   color: var(--t3);
@@ -658,11 +663,11 @@ button:focus-visible {
 }
 
 .settings-accordion-arrow svg {
-  width: 11px;
-  height: 7px;
+  width: 10px;
+  height: 6px;
   stroke: currentColor;
   fill: none;
-  stroke-width: 1.6;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -672,8 +677,8 @@ button:focus-visible {
 }
 
 .settings-accordion-content {
-  padding: 10px 14px 14px;
-  border-top: 1px solid var(--border);
+  padding: 0 2px 16px;
+  border-top: none;
 }
 
 .settings-accordion-content-models {
@@ -698,40 +703,43 @@ button:focus-visible {
 
 .settings-mode-toggle {
   width: 100%;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  background: var(--elevated);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 3px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+  padding: 0 2px;
 }
 
 .mode-tab {
   border: none;
   background: transparent;
-  color: var(--t2);
-  height: 30px;
-  border-radius: 9px;
+  color: var(--t3);
+  height: 32px;
+  border-radius: 0;
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
   cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color 120ms ease, border-color 120ms ease;
+  border-bottom: 1.5px solid transparent;
+  padding: 0 1px 1px;
+  margin-bottom: -1px;
 }
 
 .mode-tab:hover {
-  color: var(--t1);
+  color: var(--t2);
 }
 
 .mode-tab-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: transparent;
+  color: var(--t1);
+  border-bottom-color: var(--accent);
 }
 
 .setting-section {
-  padding: 12px 0;
+  padding: 13px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -769,10 +777,10 @@ button:focus-visible {
 .field-input {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.01);
   color: var(--t1);
-  padding: 8px 12px;
+  padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -787,14 +795,14 @@ button:focus-visible {
 .provider-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .provider-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px;
-  background: var(--elevated);
+  border-radius: 8px;
+  padding: 9px;
+  background: transparent;
 }
 
 .provider-card-head {
@@ -818,7 +826,7 @@ button:focus-visible {
 
 .provider-name {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 560;
   color: var(--t1);
   line-height: 1.2;
 }
@@ -831,7 +839,7 @@ button:focus-visible {
 
 .provider-key-input {
   margin-bottom: 0;
-  height: 34px;
+  height: 32px;
 }
 
 .field-select {
@@ -875,13 +883,13 @@ button:focus-visible {
 }
 
 .inline-action-button {
-  height: 34px;
+  height: 32px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--raised);
+  border-radius: 8px;
+  background: transparent;
   color: var(--t1);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 560;
   font-family: inherit;
   padding: 0 12px;
   cursor: pointer;
@@ -891,6 +899,7 @@ button:focus-visible {
 
 .inline-action-button:hover:not(:disabled) {
   border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .inline-action-button:disabled {
@@ -1107,11 +1116,11 @@ button:focus-visible {
 
 .shortcut-chip {
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
+  border-radius: 8px;
+  background: transparent;
   color: var(--t2);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 540;
   font-family: inherit;
   padding: 6px 10px;
   cursor: pointer;
@@ -1124,9 +1133,9 @@ button:focus-visible {
 }
 
 .shortcut-chip-active {
-  color: var(--accent);
+  color: var(--t1);
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: rgba(196, 164, 108, 0.06);
 }
 
 @media (max-width: 760px) {

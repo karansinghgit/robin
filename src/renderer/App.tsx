@@ -1002,12 +1002,6 @@ export function App() {
   }
 
   useEffect(() => {
-    if (sidebarTab === "todos") {
-      void loadTodos();
-    }
-  }, [sidebarTab]);
-
-  useEffect(() => {
     let isActive = true;
 
     void (async () => {
@@ -1881,8 +1875,8 @@ export function App() {
           <div className="sidebar-nav-grid">
             <button
               type="button"
-              className={`sidebar-nav-cell${sidebarTab === "chats" ? " sidebar-nav-cell-active" : ""}`}
-              onClick={() => setSidebarTab("chats")}
+              className={`sidebar-nav-cell${screen === "chat" && sidebarTab === "chats" ? " sidebar-nav-cell-active" : ""}`}
+              onClick={() => { setSidebarTab("chats"); setScreen("chat"); }}
             >
               <IconChat />
               <span>Chats</span>
@@ -1890,15 +1884,14 @@ export function App() {
             <button
               type="button"
               className={`sidebar-nav-cell${sidebarTab === "todos" ? " sidebar-nav-cell-active" : ""}`}
-              onClick={() => setSidebarTab("todos")}
+              onClick={() => { setSidebarTab("todos"); setScreen("chat"); void loadTodos(); }}
             >
               <IconTodo />
               <span>Todos</span>
             </button>
             <button
               type="button"
-              className={`sidebar-nav-cell sidebar-nav-cell-disabled${sidebarTab === "notes" ? " sidebar-nav-cell-active" : ""}`}
-              onClick={() => setSidebarTab("notes")}
+              className="sidebar-nav-cell sidebar-nav-cell-disabled"
             >
               <IconNote />
               <span>Notes</span>
@@ -1906,8 +1899,7 @@ export function App() {
             </button>
             <button
               type="button"
-              className={`sidebar-nav-cell sidebar-nav-cell-disabled${sidebarTab === "calendar" ? " sidebar-nav-cell-active" : ""}`}
-              onClick={() => setSidebarTab("calendar")}
+              className="sidebar-nav-cell sidebar-nav-cell-disabled"
             >
               <IconCalendar />
               <span>Calendar</span>
@@ -1915,144 +1907,41 @@ export function App() {
             </button>
           </div>
 
-          {sidebarTab === "chats" && (
-            <>
-              <div className="chat-sidebar-head-row">
-                <div className="chat-sidebar-head">Chats</div>
+          <div className="chat-sidebar-head-row">
+            <div className="chat-sidebar-head">Chats</div>
+            <button
+              type="button"
+              className="chat-sidebar-new"
+              title="New chat"
+              aria-label="New chat"
+              onClick={() => { void startNewChat(); setSidebarTab("chats"); }}
+            >
+              <IconPlus />
+            </button>
+          </div>
+          <div className="chat-sidebar-list">
+            {threads.length > 0 ? (
+              threads.map((thread) => (
                 <button
-                  type="button"
-                  className="chat-sidebar-new"
-                  title="New chat"
-                  aria-label="New chat"
-                  onClick={() => { void startNewChat(); }}
-                >
-                  <IconPlus />
-                </button>
-              </div>
-              <div className="chat-sidebar-list">
-                {threads.length > 0 ? (
-                  threads.map((thread) => (
-                    <button
-                      key={thread.id}
-                      className={`chat-sidebar-item${activeThread?.id === thread.id ? " chat-sidebar-item-active" : ""}`}
-                      onClick={() => { void selectThread(thread.id); }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        if (!window.confirm("Delete this chat?")) {
-                          return;
-                        }
-                        void deleteThread(thread.id);
-                      }}
-                    >
-                      {thread.title || thread.preview || "Untitled"}
-                    </button>
-                  ))
-                ) : (
-                  <p className="chat-sidebar-empty">No conversations yet</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {sidebarTab === "todos" && (
-            <div className="todo-panel">
-              <div className="todo-add-row">
-                <input
-                  className="todo-add-input"
-                  placeholder="Add a todo..."
-                  value={newTodoTitle}
-                  onChange={(e) => setNewTodoTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void createTodo();
+                  key={thread.id}
+                  className={`chat-sidebar-item${activeThread?.id === thread.id && sidebarTab === "chats" ? " chat-sidebar-item-active" : ""}`}
+                  onClick={() => { void selectThread(thread.id); setSidebarTab("chats"); setScreen("chat"); }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    if (!window.confirm("Delete this chat?")) {
+                      return;
                     }
+                    void deleteThread(thread.id);
                   }}
-                />
-              </div>
-              <div className="todo-list">
-                {todos.length > 0 ? (
-                  todos.map((todo) => (
-                    <div
-                      key={todo.id}
-                      className={`todo-item${dragOverTodoId === todo.id ? " todo-item-drag-over" : ""}`}
-                      draggable
-                      onDragStart={() => setDraggedTodoId(todo.id)}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setDragOverTodoId(todo.id);
-                      }}
-                      onDragLeave={() => {
-                        if (dragOverTodoId === todo.id) setDragOverTodoId(null);
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        void handleTodoDrop(todo.id);
-                      }}
-                      onDragEnd={() => {
-                        setDraggedTodoId(null);
-                        setDragOverTodoId(null);
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className={`todo-check${todo.completed ? " todo-check-done" : ""}`}
-                        onClick={() => { void toggleTodo(todo.id, !todo.completed); }}
-                      >
-                        {todo.completed && <IconCheck />}
-                      </button>
-                      {editingTodoId === todo.id ? (
-                        <input
-                          className="todo-edit-input"
-                          value={editingTodoTitle}
-                          autoFocus
-                          onChange={(e) => setEditingTodoTitle(e.target.value)}
-                          onBlur={() => { void saveTodoTitle(todo.id, editingTodoTitle); }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              void saveTodoTitle(todo.id, editingTodoTitle);
-                            }
-                            if (e.key === "Escape") {
-                              setEditingTodoId(null);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <span
-                          className={`todo-title${todo.completed ? " todo-title-done" : ""}`}
-                          onDoubleClick={() => {
-                            setEditingTodoId(todo.id);
-                            setEditingTodoTitle(todo.title);
-                          }}
-                        >
-                          {todo.title}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="todo-delete"
-                        title="Delete"
-                        onClick={() => { void deleteTodoItem(todo.id); }}
-                      >
-                        <IconClose />
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="todo-empty">No todos yet</p>
-                )}
-              </div>
-            </div>
-          )}
+                >
+                  {thread.title || thread.preview || "Untitled"}
+                </button>
+              ))
+            ) : (
+              <p className="chat-sidebar-empty">No conversations yet</p>
+            )}
+          </div>
 
-          {(sidebarTab === "notes" || sidebarTab === "calendar") && (
-            <div className="coming-soon-panel">
-              <p className="coming-soon-label">
-                {sidebarTab === "notes" ? "Notes" : "Calendar"} coming soon
-              </p>
-            </div>
-          )}
           <div className="chat-sidebar-footer">
             <button
               className={`chat-sidebar-settings${screen === "settings" ? " chat-sidebar-settings-active" : ""}`}
@@ -2512,6 +2401,105 @@ export function App() {
                 </article>
               </section>
             </>
+          ) : sidebarTab === "todos" ? (
+            <div className="todo-main-panel">
+              <header className="todo-main-header">
+                <h1 className="todo-main-title">Todos</h1>
+              </header>
+              <div className="todo-main-add-row">
+                <input
+                  className="todo-main-add-input"
+                  placeholder="Add a todo..."
+                  value={newTodoTitle}
+                  onChange={(e) => setNewTodoTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void createTodo();
+                    }
+                  }}
+                />
+              </div>
+              <div className="todo-main-list">
+                {todos.length > 0 ? (
+                  todos.map((todo) => (
+                    <div
+                      key={todo.id}
+                      className={`todo-main-item${dragOverTodoId === todo.id ? " todo-main-item-drag-over" : ""}`}
+                      draggable
+                      onDragStart={() => setDraggedTodoId(todo.id)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOverTodoId(todo.id);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverTodoId === todo.id) setDragOverTodoId(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        void handleTodoDrop(todo.id);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedTodoId(null);
+                        setDragOverTodoId(null);
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className={`todo-check${todo.completed ? " todo-check-done" : ""}`}
+                        onClick={() => { void toggleTodo(todo.id, !todo.completed); }}
+                      >
+                        {todo.completed && <IconCheck />}
+                      </button>
+                      {editingTodoId === todo.id ? (
+                        <input
+                          className="todo-main-edit-input"
+                          value={editingTodoTitle}
+                          autoFocus
+                          onChange={(e) => setEditingTodoTitle(e.target.value)}
+                          onBlur={() => { void saveTodoTitle(todo.id, editingTodoTitle); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void saveTodoTitle(todo.id, editingTodoTitle);
+                            }
+                            if (e.key === "Escape") {
+                              setEditingTodoId(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className={`todo-main-title${todo.completed ? " todo-main-title-done" : ""}`}
+                          onClick={() => {
+                            setEditingTodoId(todo.id);
+                            setEditingTodoTitle(todo.title);
+                          }}
+                        >
+                          {todo.title}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="todo-main-delete"
+                        title="Delete"
+                        onClick={() => { void deleteTodoItem(todo.id); }}
+                      >
+                        <IconClose />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="todo-main-empty">No todos yet</p>
+                )}
+              </div>
+            </div>
+          ) : (sidebarTab === "notes" || sidebarTab === "calendar") ? (
+            <div className="coming-soon-main">
+              <p className="coming-soon-label">
+                {sidebarTab === "notes" ? "Notes" : "Calendar"} coming soon
+              </p>
+            </div>
           ) : (
             <>
               {error ? (

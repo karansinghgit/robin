@@ -1,12 +1,15 @@
 import {
   CLOUD_PROVIDER_IDS,
   CloudProviderId,
+  ChatAttachment,
   ChatMessage,
   ChatStreamEvent,
   ChatStreamRequest,
   Citation,
+  CloudModelCatalogResult,
   ConversationThread,
   LocalModelCatalogItem,
+  ModelDeleteResult,
   ModelPullResult,
   ProviderStatus,
   SaveConfigInput
@@ -14,33 +17,49 @@ import {
 import { SecureConfig } from "./secureConfig";
 import { AppStorage, buildThreadTitle, SettingsData } from "./storage";
 import { OllamaProvider } from "./providers/ollamaProvider";
+import { OpenAIProvider } from "./providers/openaiProvider";
 import { PerplexityProvider } from "./providers/perplexityProvider";
+import { GoogleProvider } from "./providers/googleProvider";
+import { CURATED_CLOUD_MODELS } from "./providers/curatedCloudModels";
 import os from "node:os";
+import { createHash } from "node:crypto";
 
 function isoNow(): string {
   return new Date().toISOString();
 }
 
-function createMessage(role: ChatMessage["role"], content: string, status?: ChatMessage["status"]): ChatMessage {
+function createMessage(
+  role: ChatMessage["role"],
+  content: string,
+  status?: ChatMessage["status"],
+  attachments?: ChatAttachment[]
+): ChatMessage {
   return {
     id: crypto.randomUUID(),
     role,
     content,
     createdAt: isoNow(),
+    attachments,
     status
   };
 }
 
 function resolveProviderSettings(settings: SettingsData | undefined) {
   const providers = settings?.providers ?? {
-    cloud: { activeProvider: "perplexity" as CloudProviderId },
+    cloud: {
+      activeProvider: "openai" as CloudProviderId,
+      selectedModels: {} as Partial<Record<CloudProviderId, string[]>>,
+      catalogCache: {} as Partial<Record<CloudProviderId, { fetchedAt: string; models: CloudModelCatalogResult["models"] }>>
+    },
     perplexity: { model: "openai/gpt-5-mini", preset: "pro-search" },
     ollama: { baseUrl: "http://localhost:11434", model: "" }
   };
 
   return {
     cloud: {
-      activeProvider: providers.cloud?.activeProvider ?? "perplexity"
+      activeProvider: providers.cloud?.activeProvider ?? "openai",
+      selectedModels: providers.cloud?.selectedModels ?? {},
+      catalogCache: providers.cloud?.catalogCache ?? {}
     },
     perplexity: {
       model: providers.perplexity?.model ?? "openai/gpt-5-mini",
@@ -53,19 +72,139 @@ function resolveProviderSettings(settings: SettingsData | undefined) {
   };
 }
 
+const MODEL_SETUP_WARNING =
+  "You need to configure a model to use Robin. Download a local model or add a cloud provider key in Settings.";
+const LOCAL_IMAGE_UNSUPPORTED_WARNING = "Image input is not supported in Local mode yet. Switch to a cloud model.";
+
 export class ProviderService {
   private readonly ollama = new OllamaProvider();
+  private readonly openai = new OpenAIProvider();
   private readonly perplexity = new PerplexityProvider();
+  private readonly google = new GoogleProvider();
+  private readonly providerKeyValidationCache = new Map<CloudProviderId, {
+    keyHash: string;
+    valid: boolean;
+    checkedAt: number;
+  }>();
 
   constructor(
     private readonly storage: AppStorage,
     private readonly secureConfig: SecureConfig
   ) {}
 
+  private keyHash(value: string): string {
+    return createHash("sha256").update(value).digest("hex");
+  }
+
+  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 8000): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async validateProviderKeyRemote(provider: CloudProviderId, apiKey: string): Promise<boolean> {
+    try {
+      if (provider === "openai") {
+        const response = await this.fetchWithTimeout("https://api.openai.com/v1/models", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`
+          }
+        });
+        return response.ok;
+      }
+
+      if (provider === "google") {
+        const response = await this.fetchWithTimeout(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+          { method: "GET" }
+        );
+        return response.ok;
+      }
+
+      if (provider === "anthropic") {
+        const response = await this.fetchWithTimeout("https://api.anthropic.com/v1/models", {
+          method: "GET",
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01"
+          }
+        });
+        return response.ok;
+      }
+
+      if (provider === "perplexity") {
+        const response = await this.fetchWithTimeout("https://api.perplexity.ai/models", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`
+          }
+        });
+        return response.ok;
+      }
+
+      if (provider === "openrouter") {
+        const response = await this.fetchWithTimeout("https://openrouter.ai/api/v1/models", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${apiKey}`
+          }
+        });
+        return response.ok;
+      }
+    } catch {
+      return false;
+    }
+
+    return false;
+  }
+
+  private async isProviderKeyValid(provider: CloudProviderId, apiKey: string): Promise<boolean> {
+    const keyHash = this.keyHash(apiKey);
+    const cached = this.providerKeyValidationCache.get(provider);
+    if (cached && cached.keyHash === keyHash && (Date.now() - cached.checkedAt) < 10 * 60 * 1000) {
+      return cached.valid;
+    }
+
+    const valid = await this.validateProviderKeyRemote(provider, apiKey);
+    this.providerKeyValidationCache.set(provider, {
+      keyHash,
+      valid,
+      checkedAt: Date.now()
+    });
+    return valid;
+  }
+
+  private async getValidProviderMap(providerApiKeys: Record<CloudProviderId, string>): Promise<Record<CloudProviderId, boolean>> {
+    const checks = await Promise.all(
+      CLOUD_PROVIDER_IDS.map(async (providerId) => {
+        const apiKey = providerApiKeys[providerId]?.trim();
+        if (!apiKey) {
+          return [providerId, false] as const;
+        }
+        const valid = await this.isProviderKeyValid(providerId, apiKey);
+        return [providerId, valid] as const;
+      })
+    );
+
+    return checks.reduce((result, [providerId, valid]) => {
+      result[providerId] = valid;
+      return result;
+    }, {} as Record<CloudProviderId, boolean>);
+  }
+
   async getStatus(): Promise<ProviderStatus> {
     const settings = await this.storage.getSettings();
     const providers = resolveProviderSettings(settings);
-    const cloudProviderKeys = await this.secureConfig.getConfiguredProviderMap();
+    const providerApiKeys = await this.secureConfig.getProviderApiKeys();
+    const cloudProviderKeys = await this.getValidProviderMap(providerApiKeys);
     const ollama = await this.ollama.detect(
       providers.ollama.baseUrl,
       providers.ollama.model || undefined
@@ -78,6 +217,12 @@ export class ProviderService {
       systemMemoryGb: Number((os.totalmem() / (1024 ** 3)).toFixed(1)),
       activeCloudProvider: providers.cloud.activeProvider,
       cloudProviderKeys,
+      providerApiKeys,
+      selectedCloudModels: CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+        const selected = providers.cloud.selectedModels?.[providerId];
+        result[providerId] = Array.isArray(selected) ? selected : [];
+        return result;
+      }, {} as Record<CloudProviderId, string[]>),
       perplexity: {
         configured: cloudProviderKeys.perplexity,
         model: providers.perplexity.model,
@@ -96,13 +241,19 @@ export class ProviderService {
       const saves: Array<Promise<void>> = [];
       for (const providerId of CLOUD_PROVIDER_IDS) {
         const candidate = config.providerApiKeys[providerId];
-        if (typeof candidate === "string" && candidate.trim()) {
-          saves.push(this.secureConfig.setProviderApiKey(providerId, candidate));
+        if (typeof candidate === "string") {
+          const normalized = candidate.trim();
+          if (normalized) {
+            saves.push(this.secureConfig.setProviderApiKey(providerId, normalized));
+          } else {
+            saves.push(this.secureConfig.clearProviderApiKey(providerId));
+          }
         }
       }
       if (saves.length > 0) {
         await Promise.all(saves);
       }
+      this.providerKeyValidationCache.clear();
     }
 
     await this.storage.saveSettings((current) => ({
@@ -112,7 +263,40 @@ export class ProviderService {
       shortcut: config.shortcut ?? current.shortcut,
       providers: {
         cloud: {
-          activeProvider: config.activeCloudProvider ?? current.providers.cloud.activeProvider
+          activeProvider: config.activeCloudProvider ?? current.providers.cloud.activeProvider,
+          selectedModels: (() => {
+            const selectedFromConfig = config.selectedCloudModels;
+            if (!selectedFromConfig) {
+              return current.providers.cloud.selectedModels;
+            }
+
+            const next: Partial<Record<CloudProviderId, string[]>> = {
+              ...(current.providers.cloud.selectedModels ?? {})
+            };
+
+            for (const providerId of CLOUD_PROVIDER_IDS) {
+              const candidate = selectedFromConfig[providerId];
+              if (!Array.isArray(candidate)) {
+                continue;
+              }
+              const normalized = Array.from(
+                new Set(
+                  candidate
+                    .filter((value): value is string => typeof value === "string")
+                    .map((value) => value.trim())
+                    .filter(Boolean)
+                )
+              );
+              if (normalized.length > 0) {
+                next[providerId] = normalized;
+              } else {
+                delete next[providerId];
+              }
+            }
+
+            return next;
+          })(),
+          catalogCache: current.providers.cloud.catalogCache ?? {}
         },
         perplexity: {
           model: config.perplexityModel ?? current.providers.perplexity.model,
@@ -156,6 +340,40 @@ export class ProviderService {
     return this.ollama.pullModel(ollamaStatus.baseUrl || providers.ollama.baseUrl, model);
   }
 
+  async deleteOllamaModel(model: string): Promise<ModelDeleteResult> {
+    const settings = await this.storage.getSettings();
+    const providers = resolveProviderSettings(settings);
+    const ollamaStatus = await this.ollama.detect(
+      providers.ollama.baseUrl,
+      providers.ollama.model || undefined
+    );
+
+    if (ollamaStatus.state === "not_installed") {
+      throw new Error("Ollama is not installed yet.");
+    }
+    if (ollamaStatus.state === "not_running") {
+      throw new Error(`Could not reach Ollama at ${ollamaStatus.baseUrl}. Open Ollama (or run 'ollama serve') and retry.`);
+    }
+
+    return this.ollama.deleteModel(ollamaStatus.baseUrl || providers.ollama.baseUrl, model);
+  }
+
+  async listCloudModels(provider: CloudProviderId): Promise<CloudModelCatalogResult> {
+    const apiKey = await this.secureConfig.getProviderApiKey(provider);
+    if (!apiKey) {
+      throw new Error(MODEL_SETUP_WARNING);
+    }
+    const valid = await this.isProviderKeyValid(provider, apiKey);
+    if (!valid) {
+      throw new Error("Add a valid API key in Settings.");
+    }
+
+    return {
+      provider,
+      models: CURATED_CLOUD_MODELS[provider] ?? []
+    };
+  }
+
   async streamChat(
     request: ChatStreamRequest,
     emit: (event: ChatStreamEvent) => void
@@ -164,11 +382,12 @@ export class ProviderService {
     const providers = resolveProviderSettings(settings);
     const currentThread =
       request.conversationId ? await this.storage.loadThread(request.conversationId) : null;
-    const userMessage = createMessage("user", request.prompt, "complete");
+    const userMessage = createMessage("user", request.prompt, "complete", request.attachments);
     const assistantMessage = createMessage("assistant", "", "streaming");
+    const seedTitle = request.prompt.trim() || (request.attachments?.length ? "Image" : "New chat");
     const thread: ConversationThread = currentThread ?? {
       id: crypto.randomUUID(),
-      title: buildThreadTitle(request.prompt),
+      title: buildThreadTitle(seedTitle),
       mode: request.mode,
       createdAt: isoNow(),
       updatedAt: isoNow(),
@@ -192,35 +411,86 @@ export class ProviderService {
 
     try {
       if (request.mode === "search") {
-        const activeCloudProvider = providers.cloud.activeProvider;
-        if (activeCloudProvider !== "perplexity") {
-          throw new Error(`${this.providerLabel(activeCloudProvider)} chat is not wired yet. For now, use Perplexity in Cloud mode or switch to Local.`);
-        }
+        const requestedCloudProvider = request.cloudProvider ?? providers.cloud.activeProvider;
+        const streamMessages = thread.messages.filter((message) => message.id !== assistantMessage.id);
 
-        const apiKey = await this.secureConfig.getProviderApiKey("perplexity");
-        if (!apiKey) {
-          throw new Error(
-            "You need to configure a model to use Robin. You either need to download a model to run locally, or Bring Your Own Key from ChatGPT / Claude / Gemini / Perplexity."
-          );
-        }
-        const result = await this.perplexity.streamReply({
-          apiKey,
-          model: providers.perplexity.model,
-          preset: providers.perplexity.preset,
-          messages: thread.messages.filter((message) => message.id !== assistantMessage.id),
-          onDelta: (delta) => {
-            assistantMessage.content += delta;
-            emit({
-              streamId,
-              type: "delta",
-              threadId: thread.id,
-              messageId: assistantMessage.id,
-              delta
-            });
+        if (requestedCloudProvider === "openai") {
+          const apiKey = await this.secureConfig.getProviderApiKey("openai");
+          if (!apiKey) {
+            throw new Error(MODEL_SETUP_WARNING);
           }
-        });
-        finalCitations = result.citations;
+
+          const preferredSelectedOpenAIModel = providers.cloud.selectedModels.openai?.[0];
+          await this.openai.streamReply({
+            apiKey,
+            model: request.cloudModel?.trim() || preferredSelectedOpenAIModel || "gpt-5-mini",
+            mode: request.cloudMode?.trim() || undefined,
+            messages: streamMessages,
+            onDelta: (delta) => {
+              assistantMessage.content += delta;
+              emit({
+                streamId,
+                type: "delta",
+                threadId: thread.id,
+                messageId: assistantMessage.id,
+                delta
+              });
+            }
+          });
+          finalCitations = [];
+        } else if (requestedCloudProvider === "perplexity") {
+          const apiKey = await this.secureConfig.getProviderApiKey("perplexity");
+          if (!apiKey) {
+            throw new Error(MODEL_SETUP_WARNING);
+          }
+          const preferredSelectedPerplexityModel = providers.cloud.selectedModels.perplexity?.[0];
+          const result = await this.perplexity.streamReply({
+            apiKey,
+            model: request.cloudModel?.trim() || preferredSelectedPerplexityModel || providers.perplexity.model,
+            preset: providers.perplexity.preset,
+            messages: streamMessages,
+            onDelta: (delta) => {
+              assistantMessage.content += delta;
+              emit({
+                streamId,
+                type: "delta",
+                threadId: thread.id,
+                messageId: assistantMessage.id,
+                delta
+              });
+            }
+          });
+          finalCitations = result.citations;
+        } else if (requestedCloudProvider === "google") {
+          const apiKey = await this.secureConfig.getProviderApiKey("google");
+          if (!apiKey) {
+            throw new Error(MODEL_SETUP_WARNING);
+          }
+
+          const preferredSelectedGoogleModel = providers.cloud.selectedModels.google?.[0];
+          await this.google.streamReply({
+            apiKey,
+            model: request.cloudModel?.trim() || preferredSelectedGoogleModel || "gemini-2.5-flash",
+            messages: streamMessages,
+            onDelta: (delta) => {
+              assistantMessage.content += delta;
+              emit({
+                streamId,
+                type: "delta",
+                threadId: thread.id,
+                messageId: assistantMessage.id,
+                delta
+              });
+            }
+          });
+          finalCitations = [];
+        } else {
+          throw new Error(MODEL_SETUP_WARNING);
+        }
       } else {
+        if ((request.attachments?.length ?? 0) > 0) {
+          throw new Error(LOCAL_IMAGE_UNSUPPORTED_WARNING);
+        }
         const ollamaStatus = await this.ollama.detect(
           providers.ollama.baseUrl,
           providers.ollama.model || undefined
@@ -296,20 +566,4 @@ export class ProviderService {
     }
   }
 
-  private providerLabel(providerId: CloudProviderId): string {
-    switch (providerId) {
-      case "openai":
-        return "OpenAI";
-      case "anthropic":
-        return "Anthropic";
-      case "google":
-        return "Google";
-      case "perplexity":
-        return "Perplexity";
-      case "openrouter":
-        return "OpenRouter";
-      default:
-        return "Cloud provider";
-    }
-  }
 }

@@ -18,11 +18,19 @@ export interface Citation {
   snippet?: string;
 }
 
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   createdAt: string;
+  attachments?: ChatAttachment[];
   citations?: Citation[];
   status?: "streaming" | "complete" | "error";
 }
@@ -48,6 +56,10 @@ export interface ChatStreamRequest {
   conversationId?: string;
   mode: AssistantMode;
   prompt: string;
+  attachments?: ChatAttachment[];
+  cloudProvider?: CloudProviderId;
+  cloudModel?: string;
+  cloudMode?: string;
   streamId?: string;
 }
 
@@ -82,6 +94,11 @@ export interface ModelPullResult {
   digest?: string;
 }
 
+export interface ModelDeleteResult {
+  model: string;
+  status: string;
+}
+
 export interface ProviderStatus {
   onboardingCompleted: boolean;
   preferredMode: AssistantMode;
@@ -89,6 +106,8 @@ export interface ProviderStatus {
   systemMemoryGb: number;
   activeCloudProvider: CloudProviderId;
   cloudProviderKeys: Record<CloudProviderId, boolean>;
+  providerApiKeys: Record<CloudProviderId, string>;
+  selectedCloudModels: Record<CloudProviderId, string[]>;
   perplexity: {
     configured: boolean;
     model: string;
@@ -97,8 +116,28 @@ export interface ProviderStatus {
   ollama: OllamaStatus;
 }
 
+export interface CloudModelCatalogItem {
+  id: string;
+  modes: string[];
+}
+
+export interface CloudModelCatalogResult {
+  provider: CloudProviderId;
+  models: CloudModelCatalogItem[];
+}
+
 export interface AppProfile {
   name: string;
+}
+
+export interface UpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseUrl?: string;
+  downloadUrl?: string;
+  publishedAt?: string;
+  checkedAt: string;
 }
 
 export interface SaveConfigInput {
@@ -112,6 +151,7 @@ export interface SaveConfigInput {
   ollamaModel?: string;
   activeCloudProvider?: CloudProviderId;
   providerApiKeys?: Partial<Record<CloudProviderId, string>>;
+  selectedCloudModels?: Partial<Record<CloudProviderId, string[]>>;
 }
 
 export type ChatStreamEvent =
@@ -156,6 +196,8 @@ export interface RobinBridge {
     setShortcut: (accelerator: string) => Promise<{ success: boolean; shortcut: string }>;
     openExternal: (url: string) => Promise<void>;
     getProfile: () => Promise<AppProfile>;
+    getVersion: () => Promise<string>;
+    checkForUpdates: () => Promise<UpdateCheckResult>;
   };
   chat: {
     streamReply: (
@@ -170,14 +212,17 @@ export interface RobinBridge {
     ) => Promise<string>;
     listThreads: () => Promise<ThreadSummary[]>;
     loadThread: (id: string) => Promise<ConversationThread | null>;
+    deleteThread: (id: string) => Promise<boolean>;
   };
   providers: {
     getStatus: () => Promise<ProviderStatus>;
     saveConfig: (config: SaveConfigInput) => Promise<ProviderStatus>;
+    listCloudModels: (provider: CloudProviderId) => Promise<CloudModelCatalogResult>;
   };
   ollama: {
     detect: () => Promise<OllamaStatus>;
     listCatalog: (limit?: number) => Promise<LocalModelCatalogItem[]>;
     pullModel: (model: string) => Promise<ModelPullResult>;
+    deleteModel: (model: string) => Promise<ModelDeleteResult>;
   };
 }

@@ -6,16 +6,21 @@ const CHANNELS = {
   openWindow: "app:open-window",
   setShortcut: "app:set-shortcut",
   profile: "app:get-profile",
+  version: "app:get-version",
+  checkUpdates: "app:check-updates",
   openExternal: "app:open-external",
   listThreads: "chat:list-threads",
   loadThread: "chat:load-thread",
+  deleteThread: "chat:delete-thread",
   startStream: "chat:stream-start",
   streamEvent: "chat:stream-event",
   providerStatus: "providers:get-status",
   saveConfig: "providers:save-config",
+  listCloudModels: "providers:list-cloud-models",
   ollamaDetect: "ollama:detect",
   ollamaCatalog: "ollama:list-catalog",
-  ollamaPull: "ollama:pull-model"
+  ollamaPull: "ollama:pull-model",
+  ollamaDelete: "ollama:delete-model"
 } as const;
 
 const bridge: RobinBridge = {
@@ -28,6 +33,8 @@ const bridge: RobinBridge = {
     },
     setShortcut: async (accelerator) => ipcRenderer.invoke(CHANNELS.setShortcut, accelerator),
     getProfile: async () => ipcRenderer.invoke(CHANNELS.profile),
+    getVersion: async () => ipcRenderer.invoke(CHANNELS.version),
+    checkForUpdates: async () => ipcRenderer.invoke(CHANNELS.checkUpdates),
     openExternal: async (url) => {
       await ipcRenderer.invoke(CHANNELS.openExternal, url);
     }
@@ -68,16 +75,19 @@ const bridge: RobinBridge = {
       return streamId;
     },
     listThreads: async () => ipcRenderer.invoke(CHANNELS.listThreads),
-    loadThread: async (id) => ipcRenderer.invoke(CHANNELS.loadThread, id)
+    loadThread: async (id) => ipcRenderer.invoke(CHANNELS.loadThread, id),
+    deleteThread: async (id) => ipcRenderer.invoke(CHANNELS.deleteThread, id)
   },
   providers: {
     getStatus: async () => ipcRenderer.invoke(CHANNELS.providerStatus),
-    saveConfig: async (config: SaveConfigInput) => ipcRenderer.invoke(CHANNELS.saveConfig, config)
+    saveConfig: async (config: SaveConfigInput) => ipcRenderer.invoke(CHANNELS.saveConfig, config),
+    listCloudModels: async (provider) => ipcRenderer.invoke(CHANNELS.listCloudModels, provider)
   },
   ollama: {
     detect: async () => ipcRenderer.invoke(CHANNELS.ollamaDetect),
     listCatalog: async (limit?: number) => ipcRenderer.invoke(CHANNELS.ollamaCatalog, limit),
-    pullModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaPull, model)
+    pullModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaPull, model),
+    deleteModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaDelete, model)
   }
 };
 

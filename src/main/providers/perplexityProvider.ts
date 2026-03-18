@@ -4,7 +4,13 @@ import { ChatMessage, Citation } from "../../shared/contracts";
 function buildTranscript(messages: ChatMessage[]): string {
   return messages
     .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .map((message) => {
+      const imageNotes = (message.attachments ?? [])
+        .map((attachment) => `[Image attached: ${attachment.name || "image"}]`)
+        .join(" ");
+      const payload = [message.content, imageNotes].filter((chunk) => chunk.trim().length > 0).join(" ");
+      return `${message.role.toUpperCase()}: ${payload}`;
+    })
     .join("\n\n");
 }
 

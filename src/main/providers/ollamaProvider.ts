@@ -1,6 +1,13 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { ChatMessage, Citation, LocalModelCatalogItem, ModelPullResult, OllamaStatus } from "../../shared/contracts";
+import {
+  ChatMessage,
+  Citation,
+  LocalModelCatalogItem,
+  ModelDeleteResult,
+  ModelPullResult,
+  OllamaStatus
+} from "../../shared/contracts";
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_DOWNLOAD_URL = "https://ollama.com/download";
@@ -425,6 +432,53 @@ export class OllamaProvider {
     }
 
     return result;
+  }
+
+  async deleteModel(baseUrl: string, model: string): Promise<ModelDeleteResult> {
+    const targetModel = model.trim();
+    if (!targetModel) {
+      throw new Error("Model name is required.");
+    }
+
+    let response: Response | null = null;
+    const methods: Array<"DELETE" | "POST"> = ["DELETE", "POST"];
+    for (const candidate of buildBaseUrlCandidates(baseUrl)) {
+      for (const method of methods) {
+        try {
+          const nextResponse = await fetch(`${candidate}/api/delete`, {
+            method,
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: targetModel
+            })
+          });
+          response = nextResponse;
+          if (response.ok) {
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (response?.ok) {
+        break;
+      }
+    }
+
+    if (!response) {
+      throw new Error(formatReachabilityError(baseUrl));
+    }
+
+    if (!response.ok) {
+      throw new Error(`Could not delete ${targetModel}.`);
+    }
+
+    return {
+      model: targetModel,
+      status: "Deleted"
+    };
   }
 
   private async isInstalled(): Promise<boolean> {

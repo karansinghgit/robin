@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CLOUD_PROVIDER_IDS, CloudProviderId, ConversationThread, ThreadSummary } from "../shared/contracts";
+import { CLOUD_PROVIDER_IDS, CloudModelCatalogItem, CloudProviderId, ConversationThread, ThreadSummary } from "../shared/contracts";
 
 export interface SettingsData {
   onboardingCompleted: boolean;
@@ -10,6 +10,8 @@ export interface SettingsData {
   providers: {
     cloud: {
       activeProvider: CloudProviderId;
+      selectedModels: Partial<Record<CloudProviderId, string[]>>;
+      catalogCache: Partial<Record<CloudProviderId, { fetchedAt: string; models: CloudModelCatalogItem[] }>>;
     };
     perplexity: {
       model: string;
@@ -39,7 +41,9 @@ const DEFAULT_SETTINGS: SettingsData = {
   shortcut: "CommandOrControl+Shift+Space",
   providers: {
     cloud: {
-      activeProvider: "perplexity"
+      activeProvider: "openai",
+      selectedModels: {},
+      catalogCache: {}
     },
     perplexity: {
       model: "openai/gpt-5-mini",
@@ -66,6 +70,64 @@ function normalizeSettings(raw: unknown): SettingsData {
     ? source.shortcut
     : DEFAULT_SETTINGS.shortcut;
 
+  const normalizedSelectedCloudModels = CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+    const rawModels = sourceCloud.selectedModels?.[providerId];
+    if (!Array.isArray(rawModels)) {
+      return result;
+    }
+
+    const normalizedModels = Array.from(
+      new Set(
+        rawModels
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (normalizedModels.length > 0) {
+      result[providerId] = normalizedModels;
+    }
+
+    return result;
+  }, {} as Partial<Record<CloudProviderId, string[]>>);
+
+  const normalizedCloudCatalogCache = CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+    const rawEntry = sourceCloud.catalogCache?.[providerId];
+    if (!rawEntry || typeof rawEntry !== "object") {
+      return result;
+    }
+
+    const fetchedAt = typeof rawEntry.fetchedAt === "string" ? rawEntry.fetchedAt : "";
+    const rawModels = Array.isArray(rawEntry.models) ? rawEntry.models : [];
+    const normalizedModels: CloudModelCatalogItem[] = rawModels
+      .filter((item): item is CloudModelCatalogItem => Boolean(item && typeof item === "object" && typeof item.id === "string"))
+      .map((item) => ({
+        id: item.id.trim(),
+        modes: Array.isArray(item.modes)
+          ? Array.from(
+              new Set(
+                item.modes
+                  .filter((mode): mode is string => typeof mode === "string")
+                  .map((mode) => mode.trim())
+                  .filter(Boolean)
+              )
+            )
+          : []
+      }))
+      .filter((item) => item.id.length > 0);
+
+    if (!fetchedAt || normalizedModels.length === 0) {
+      return result;
+    }
+
+    result[providerId] = {
+      fetchedAt,
+      models: normalizedModels
+    };
+    return result;
+  }, {} as Partial<Record<CloudProviderId, { fetchedAt: string; models: CloudModelCatalogItem[] }>>);
+
   return {
     onboardingCompleted: Boolean(source.onboardingCompleted),
     preferredMode,
@@ -76,7 +138,9 @@ function normalizeSettings(raw: unknown): SettingsData {
           ? sourceCloud.activeProvider as CloudProviderId
           : typeof source.activeCloudProvider === "string" && CLOUD_PROVIDER_ID_SET.has(source.activeCloudProvider as CloudProviderId)
             ? source.activeCloudProvider as CloudProviderId
-          : DEFAULT_SETTINGS.providers.cloud.activeProvider
+          : DEFAULT_SETTINGS.providers.cloud.activeProvider,
+        selectedModels: normalizedSelectedCloudModels,
+        catalogCache: normalizedCloudCatalogCache
       },
       perplexity: {
         model: typeof sourcePerplexity.model === "string" && sourcePerplexity.model.trim()
@@ -145,7 +209,17 @@ export class AppStorage {
         title: thread.title,
         mode: thread.mode,
         updatedAt: thread.updatedAt,
-        preview: thread.messages.at(-1)?.content ?? ""
+        preview: (() => {
+          const last = thread.messages.at(-1);
+          const text = last?.content ?? "";
+          if (text.trim().length > 0) {
+            return text;
+          }
+          if ((last?.attachments?.length ?? 0) > 0) {
+            return "Image";
+          }
+          return "";
+        })()
       }));
   }
 
@@ -163,6 +237,16 @@ export class AppStorage {
       threads[index] = thread;
     }
     await this.writeJson(this.threadsPath, { threads });
+  }
+
+  async deleteThread(id: string): Promise<boolean> {
+    const threads = await this.getThreads();
+    const nextThreads = threads.filter((thread) => thread.id !== id);
+    if (nextThreads.length === threads.length) {
+      return false;
+    }
+    await this.writeJson(this.threadsPath, { threads: nextThreads });
+    return true;
   }
 
   private async getThreads(): Promise<ConversationThread[]> {

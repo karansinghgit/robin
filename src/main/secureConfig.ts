@@ -61,12 +61,45 @@ export class SecureConfig {
     await this.writeSecrets(secrets);
   }
 
+  async clearProviderApiKey(provider: CloudProviderId): Promise<void> {
+    const secrets = await this.readSecrets();
+    delete secrets.providerApiKeys[provider];
+    await this.writeSecrets(secrets);
+  }
+
   async getConfiguredProviderMap(): Promise<Record<CloudProviderId, boolean>> {
     const secrets = await this.readSecrets();
     return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
       result[providerId] = Boolean(secrets.providerApiKeys[providerId]);
       return result;
     }, {} as Record<CloudProviderId, boolean>);
+  }
+
+  async getProviderApiKeys(): Promise<Record<CloudProviderId, string>> {
+    const secrets = await this.readSecrets();
+
+    if (!safeStorage.isEncryptionAvailable()) {
+      return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+        result[providerId] = "";
+        return result;
+      }, {} as Record<CloudProviderId, string>);
+    }
+
+    return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+      const encoded = secrets.providerApiKeys[providerId];
+      if (!encoded) {
+        result[providerId] = "";
+        return result;
+      }
+
+      try {
+        const decrypted = safeStorage.decryptString(Buffer.from(encoded, "base64"));
+        result[providerId] = decrypted.trim();
+      } catch {
+        result[providerId] = "";
+      }
+      return result;
+    }, {} as Record<CloudProviderId, string>);
   }
 
   private normalizeSecrets(raw: SecretFile): NormalizedSecretFile {

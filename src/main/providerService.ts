@@ -20,6 +20,7 @@ import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAIProvider } from "./providers/openaiProvider";
 import { PerplexityProvider } from "./providers/perplexityProvider";
 import { GoogleProvider } from "./providers/googleProvider";
+import { OpenRouterProvider } from "./providers/openrouterProvider";
 import { CURATED_CLOUD_MODELS } from "./providers/curatedCloudModels";
 import os from "node:os";
 import { createHash } from "node:crypto";
@@ -72,6 +73,33 @@ function resolveProviderSettings(settings: SettingsData | undefined) {
   };
 }
 
+function prepareMessagesForAPI(messages: ChatMessage[]): ChatMessage[] {
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
+
+  return messages.map((msg, i) => {
+    if (msg.role === "user" && i !== lastUserIndex && msg.attachments?.length) {
+      return { ...msg, attachments: undefined };
+    }
+    return msg;
+  });
+}
+
+function truncateContext(messages: ChatMessage[], maxChars = 100_000): ChatMessage[] {
+  let total = messages.reduce((sum, m) => sum + m.content.length, 0);
+  const result = [...messages];
+  while (total > maxChars && result.length > 4) {
+    const removed = result.shift()!;
+    total -= removed.content.length;
+  }
+  return result;
+}
+
 const MODEL_SETUP_WARNING =
   "You need to configure a model to use Robin. Download a local model or add a cloud provider key in Settings.";
 const LOCAL_IMAGE_UNSUPPORTED_WARNING = "Image input is not supported in Local mode yet. Switch to a cloud model.";
@@ -81,6 +109,7 @@ export class ProviderService {
   private readonly openai = new OpenAIProvider();
   private readonly perplexity = new PerplexityProvider();
   private readonly google = new GoogleProvider();
+  private readonly openrouter = new OpenRouterProvider();
   private readonly providerKeyValidationCache = new Map<CloudProviderId, {
     keyHash: string;
     valid: boolean;
@@ -368,6 +397,13 @@ export class ProviderService {
       throw new Error("Add a valid API key in Settings.");
     }
 
+    if (provider === "openrouter") {
+      return {
+        provider,
+        models: []
+      };
+    }
+
     return {
       provider,
       models: CURATED_CLOUD_MODELS[provider] ?? []
@@ -412,7 +448,11 @@ export class ProviderService {
     try {
       if (request.mode === "search") {
         const requestedCloudProvider = request.cloudProvider ?? providers.cloud.activeProvider;
-        const streamMessages = thread.messages.filter((message) => message.id !== assistantMessage.id);
+        const streamMessages = truncateContext(
+          prepareMessagesForAPI(
+            thread.messages.filter((message) => message.id !== assistantMessage.id)
+          )
+        );
 
         if (requestedCloudProvider === "openai") {
           const apiKey = await this.secureConfig.getProviderApiKey("openai");
@@ -484,6 +524,34 @@ export class ProviderService {
             }
           });
           finalCitations = [];
+        } else if (requestedCloudProvider === "openrouter") {
+          const apiKey = await this.secureConfig.getProviderApiKey("openrouter");
+          if (!apiKey) {
+            throw new Error(MODEL_SETUP_WARNING);
+          }
+
+          const preferredSelectedOpenRouterModel = providers.cloud.selectedModels.openrouter?.[0];
+          const model = request.cloudModel?.trim() || preferredSelectedOpenRouterModel;
+          if (!model) {
+            throw new Error("Add an OpenRouter model ID in Settings first.");
+          }
+
+          await this.openrouter.streamReply({
+            apiKey,
+            model,
+            messages: streamMessages,
+            onDelta: (delta) => {
+              assistantMessage.content += delta;
+              emit({
+                streamId,
+                type: "delta",
+                threadId: thread.id,
+                messageId: assistantMessage.id,
+                delta
+              });
+            }
+          });
+          finalCitations = [];
         } else {
           throw new Error(MODEL_SETUP_WARNING);
         }
@@ -515,7 +583,9 @@ export class ProviderService {
         const result = await this.ollama.streamReply({
           baseUrl: providers.ollama.baseUrl,
           model: resolvedLocalModel,
-          messages: thread.messages.filter((message) => message.id !== assistantMessage.id),
+          messages: truncateContext(
+            thread.messages.filter((message) => message.id !== assistantMessage.id)
+          ),
           onDelta: (delta) => {
             assistantMessage.content += delta;
             emit({

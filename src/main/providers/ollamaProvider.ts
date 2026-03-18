@@ -53,15 +53,46 @@ function buildModelDownloadEstimate(paramsBillions: number): { estimatedSizeMb: 
   return { estimatedSizeMb, minRamGb };
 }
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, "");
+}
+
+function buildBaseUrlCandidates(baseUrl: string): string[] {
+  const normalized = normalizeBaseUrl(baseUrl);
+  const candidates = [normalized];
+
+  try {
+    const url = new URL(normalized);
+    if (url.hostname === "localhost") {
+      const fallback = new URL(url.toString());
+      fallback.hostname = "127.0.0.1";
+      candidates.push(normalizeBaseUrl(fallback.toString()));
+    } else if (url.hostname === "127.0.0.1") {
+      const fallback = new URL(url.toString());
+      fallback.hostname = "localhost";
+      candidates.push(normalizeBaseUrl(fallback.toString()));
+    }
+  } catch {
+    // Keep original base URL only if parsing fails.
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function formatReachabilityError(baseUrl: string): string {
+  return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Start the Ollama app and try again.`;
+}
+
 export class OllamaProvider {
   private catalogCache: { loadedAt: number; items: LocalModelCatalogItem[] } | null = null;
 
   async detect(baseUrl: string, selectedModel?: string): Promise<OllamaStatus> {
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
     const installed = await this.isInstalled();
     if (!installed) {
       return {
         state: "not_installed",
-        baseUrl,
+        baseUrl: normalizedBaseUrl,
         models: [],
         selectedModel,
         downloadUrl: OLLAMA_DOWNLOAD_URL
@@ -70,42 +101,39 @@ export class OllamaProvider {
 
     const version = await this.getVersion();
 
-    try {
-      const response = await fetch(`${baseUrl}/api/tags`);
-      if (!response.ok) {
+    for (const candidate of buildBaseUrlCandidates(normalizedBaseUrl)) {
+      try {
+        const response = await fetch(`${candidate}/api/tags`);
+        if (!response.ok) {
+          continue;
+        }
+
+        const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
+        const models = (payload.models ?? [])
+          .map((item) => item.name ?? item.model ?? "")
+          .filter(Boolean);
+
         return {
-          state: "not_running",
-          baseUrl,
-          models: [],
-          selectedModel,
+          state: models.length > 0 ? "ready" : "no_model",
+          baseUrl: candidate,
+          models,
+          selectedModel: selectedModel || models[0],
           version,
           downloadUrl: OLLAMA_DOWNLOAD_URL
         };
+      } catch {
+        continue;
       }
-
-      const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
-      const models = (payload.models ?? [])
-        .map((item) => item.name ?? item.model ?? "")
-        .filter(Boolean);
-
-      return {
-        state: models.length > 0 ? "ready" : "no_model",
-        baseUrl,
-        models,
-        selectedModel: selectedModel || models[0],
-        version,
-        downloadUrl: OLLAMA_DOWNLOAD_URL
-      };
-    } catch {
-      return {
-        state: "not_running",
-        baseUrl,
-        models: [],
-        selectedModel,
-        version,
-        downloadUrl: OLLAMA_DOWNLOAD_URL
-      };
     }
+
+    return {
+      state: "not_running",
+      baseUrl: normalizedBaseUrl,
+      models: [],
+      selectedModel,
+      version,
+      downloadUrl: OLLAMA_DOWNLOAD_URL
+    };
   }
 
   async streamReply(input: {
@@ -114,20 +142,35 @@ export class OllamaProvider {
     messages: ChatMessage[];
     onDelta: (delta: string) => void;
   }): Promise<{ citations: Citation[] }> {
-    const response = await fetch(`${input.baseUrl}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: input.model,
-        messages: input.messages.map((message) => ({
-          role: message.role,
-          content: message.content
-        })),
-        stream: true
-      })
-    });
+    let response: Response | null = null;
+    for (const candidate of buildBaseUrlCandidates(input.baseUrl)) {
+      try {
+        const nextResponse = await fetch(`${candidate}/api/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: input.model,
+            messages: input.messages.map((message) => ({
+              role: message.role,
+              content: message.content
+            })),
+            stream: true
+          })
+        });
+        response = nextResponse;
+        if (response.ok && response.body) {
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!response) {
+      throw new Error(formatReachabilityError(input.baseUrl));
+    }
 
     if (!response.ok || !response.body) {
       throw new Error("Ollama did not return a streaming response.");
@@ -247,19 +290,34 @@ export class OllamaProvider {
       throw new Error("Model name is required.");
     }
 
-    const response = await fetch(`${baseUrl}/api/pull`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: targetModel,
-        stream: true
-      })
-    });
+    let response: Response | null = null;
+    for (const candidate of buildBaseUrlCandidates(baseUrl)) {
+      try {
+        const nextResponse = await fetch(`${candidate}/api/pull`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: targetModel,
+            stream: true
+          })
+        });
+        response = nextResponse;
+        if (response.ok && response.body) {
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!response) {
+      throw new Error(formatReachabilityError(baseUrl));
+    }
 
     if (!response.ok || !response.body) {
-      throw new Error(`Could not start downloading ${targetModel}.`);
+      throw new Error(`Could not start downloading ${targetModel}. Check that Ollama is running.`);
     }
 
     const reader = response.body.getReader();

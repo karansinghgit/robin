@@ -141,7 +141,19 @@ export class ProviderService {
   async pullOllamaModel(model: string): Promise<ModelPullResult> {
     const settings = await this.storage.getSettings();
     const providers = resolveProviderSettings(settings);
-    return this.ollama.pullModel(providers.ollama.baseUrl, model);
+    const ollamaStatus = await this.ollama.detect(
+      providers.ollama.baseUrl,
+      providers.ollama.model || undefined
+    );
+
+    if (ollamaStatus.state === "not_installed") {
+      throw new Error("Ollama is not installed yet. Install it from ollama.com/download and retry.");
+    }
+    if (ollamaStatus.state === "not_running") {
+      throw new Error(`Could not reach Ollama at ${ollamaStatus.baseUrl}. Start the Ollama app and retry.`);
+    }
+
+    return this.ollama.pullModel(ollamaStatus.baseUrl || providers.ollama.baseUrl, model);
   }
 
   async streamChat(

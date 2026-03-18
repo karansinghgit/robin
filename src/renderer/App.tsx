@@ -215,6 +215,24 @@ function ollamaDotClass(status: OllamaStatus | null): string {
   return "ollama-dot ollama-dot-off";
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : "";
+  const message = raw
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+
+  if (!message) {
+    return fallback;
+  }
+
+  if (/fetch failed/i.test(message)) {
+    return "Could not reach Ollama. Start Ollama and retry.";
+  }
+
+  return message;
+}
+
 function getRobinBridge(): RobinBridge {
   const bridge = (window as unknown as { robin?: RobinBridge }).robin;
   if (!bridge) {
@@ -341,7 +359,7 @@ export function App() {
       const models = await robin.ollama.listCatalog(100);
       setLocalCatalog(models);
     } catch (catalogFetchError) {
-      setCatalogError(catalogFetchError instanceof Error ? catalogFetchError.message : "Could not load local model catalog.");
+      setCatalogError(errorMessage(catalogFetchError, "Could not load local model catalog."));
     } finally {
       setCatalogLoading(false);
     }
@@ -367,7 +385,7 @@ export function App() {
         await Promise.all([refreshStatus(), refreshThreads()]);
       } catch (loadError) {
         if (isActive) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load Robin state.");
+          setError(errorMessage(loadError, "Could not load Robin state."));
         }
       }
     })();
@@ -411,7 +429,7 @@ export function App() {
       });
       await refreshStatus();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save settings.");
+      setError(errorMessage(saveError, "Could not save settings."));
     }
   }
 
@@ -481,7 +499,7 @@ export function App() {
         setError("Shortcut in use.");
       }
     } catch (shortcutError) {
-      setError(shortcutError instanceof Error ? shortcutError.message : "Could not set shortcut.");
+      setError(errorMessage(shortcutError, "Could not set shortcut."));
     }
   }
 
@@ -511,7 +529,7 @@ export function App() {
       await refreshStatus();
       await applyModelSelection(modelKey("local", targetModel));
     } catch (pullError) {
-      setError(pullError instanceof Error ? pullError.message : `Could not download ${targetModel}.`);
+      setError(errorMessage(pullError, `Could not download ${targetModel}.`));
     } finally {
       setPullingModel(null);
     }

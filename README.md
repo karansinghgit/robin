@@ -158,6 +158,44 @@ make release VERSION=0.1.0
 
 For the full checklist, see [RELEASING.md](/Users/karansingh/projects/robin/RELEASING.md).
 
+## Technical Architecture
+
+### Electron main/renderer split
+
+Robin uses the standard Electron architecture with a **main process** (Node.js) handling system integration (tray, global shortcuts, IPC) and a **renderer process** (React) for the UI. Communication is via a typed `RobinBridge` exposed through `contextBridge` in the preload script — the renderer never accesses Node APIs directly.
+
+### Local-first persistence
+
+All data is stored as JSON files in Electron's `userData` directory:
+- `settings.json` — app config, provider preferences, model selections
+- `threads.json` — full conversation history with messages and attachments
+- `todos.json` — todo items with ordering
+
+API keys are encrypted at rest using Electron's `safeStorage` API (macOS Keychain / Windows DPAPI).
+
+### Multi-provider abstraction
+
+Robin supports multiple AI providers through a uniform streaming interface:
+- **OpenAI** — GPT models with mode support (chat/responses)
+- **Anthropic** — Claude models
+- **Google** — Gemini models with native image support
+- **Perplexity** — Search-grounded answers with citations
+- **OpenRouter** — Proxy to any model via user-provided model IDs
+- **Ollama** — Local models with automatic detection and management
+
+Each provider implements `streamReply()` with delta callbacks. The `ProviderService` orchestrates thread management, model resolution, and provider dispatch.
+
+### Context management
+
+Before sending messages to any provider, Robin optimises the payload:
+1. **Image stripping** — only the most recent user message retains image attachments. Older images remain in the thread for display but are excluded from API calls to avoid payload bloat.
+2. **Context truncation** — if total message content exceeds ~100K characters (~25K tokens), the oldest messages are dropped while preserving at least the last 4 messages (2 turns).
+3. **Model-agnostic threads** — threads store raw messages without model metadata. The model selection is applied at call time, so you can switch providers mid-conversation.
+
+### Assistant hub design
+
+The sidebar uses a 2x2 navigation grid (Chats, Todos, Notes, Calendar) that switches the sidebar content panel. This pattern supports adding new assistant features without changing the core chat architecture. Todos are fully functional with drag-and-drop reordering; Notes and Calendar are placeholder tiles for future development.
+
 ## Next Steps
 
 - Add real renderer/main-process automated tests

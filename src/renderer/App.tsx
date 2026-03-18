@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon, IconSvgElement } from "@hugeicons/react";
+import "@fontsource/gochi-hand";
 import {
   AssistantMode,
   CLOUD_PROVIDER_IDS,
@@ -413,7 +414,11 @@ export function App() {
           setScreen("chat");
           return;
         }
-        void getRobinBridge().app.togglePanel();
+        try {
+          void getRobinBridge().app.togglePanel();
+        } catch (bridgeError) {
+          setError(errorMessage(bridgeError, "Robin desktop bridge is unavailable. Please restart Robin."));
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -557,47 +562,53 @@ export function App() {
     setIsStreaming(true);
     const text = prompt.trim();
     setPrompt("");
-    await getRobinBridge().chat.streamReply(
-      { conversationId: activeThread?.id, mode: parsed.mode, prompt: text },
-      {
-        onThread: ({ thread }) => {
-          setActiveThread({ ...thread });
-          void refreshThreads(thread.id);
-        },
-        onDelta: ({ messageId, delta }) => {
-          setActiveThread((current) => current
-            ? {
-                ...current,
-                messages: current.messages.map((message) => (
-                  message.id === messageId
-                    ? { ...message, content: message.content + delta, status: "streaming" }
-                    : message
-                ))
-              }
-            : current);
-        },
-        onCitations: ({ messageId, citations }) => {
-          setActiveThread((current) => current
-            ? {
-                ...current,
-                messages: current.messages.map((message) => (
-                  message.id === messageId ? { ...message, citations } : message
-                ))
-              }
-            : current);
-        },
-        onDone: ({ thread }) => {
-          setIsStreaming(false);
-          setActiveThread({ ...thread });
-          void refreshThreads(thread.id);
-        },
-        onError: ({ message }) => {
-          setIsStreaming(false);
-          setError(message);
-          void refreshThreads(activeThread?.id);
+    try {
+      await getRobinBridge().chat.streamReply(
+        { conversationId: activeThread?.id, mode: parsed.mode, prompt: text },
+        {
+          onThread: ({ thread }) => {
+            setActiveThread({ ...thread });
+            void refreshThreads(thread.id);
+          },
+          onDelta: ({ messageId, delta }) => {
+            setActiveThread((current) => current
+              ? {
+                  ...current,
+                  messages: current.messages.map((message) => (
+                    message.id === messageId
+                      ? { ...message, content: message.content + delta, status: "streaming" }
+                      : message
+                  ))
+                }
+              : current);
+          },
+          onCitations: ({ messageId, citations }) => {
+            setActiveThread((current) => current
+              ? {
+                  ...current,
+                  messages: current.messages.map((message) => (
+                    message.id === messageId ? { ...message, citations } : message
+                  ))
+                }
+              : current);
+          },
+          onDone: ({ thread }) => {
+            setIsStreaming(false);
+            setActiveThread({ ...thread });
+            void refreshThreads(thread.id);
+          },
+          onError: ({ message }) => {
+            setIsStreaming(false);
+            setError(message);
+            void refreshThreads(activeThread?.id);
+          }
         }
-      }
-    );
+      );
+    } catch (streamError) {
+      setIsStreaming(false);
+      setPrompt(text);
+      setError(errorMessage(streamError, "Could not start chat. Please retry."));
+    }
   }
 
   function startNewChat() {
@@ -628,6 +639,8 @@ export function App() {
             <IconSidebar />
           </button>
         </div>
+
+        <div className="toolbar-brand" aria-hidden="true">robin</div>
 
         <div className="toolbar-right">
           <button className="tool-btn" title="New chat" onClick={startNewChat}>

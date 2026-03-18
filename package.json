@@ -36,6 +36,7 @@
   "author": "Karan Singh",
   "license": "MIT",
   "dependencies": {
+    "@fontsource/gochi-hand": "^5.2.8",
     "@hugeicons/core-free-icons": "^4.0.0",
     "@hugeicons/react": "^1.1.6",
     "openai": "^6.0.0",

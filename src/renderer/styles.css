@@ -315,12 +315,14 @@ button:focus-visible {
 }
 
 .greeting-prompt {
-  font-size: 16px;
+  font-size: 15px;
   font-style: italic;
-  font-family: "SF Pro Text", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   font-weight: 500;
-  color: #8f8f98;
-  margin-top: 12px;
+  color: #a9a9b3;
+  margin-top: 10px;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   text-align: center;
 }
 

@@ -55,6 +55,14 @@ function shortName(value: string): string {
   return parsed.split("/").pop() || parsed || "—";
 }
 
+function safeCitationHost(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).hostname;
+  } catch {
+    return rawUrl.replace(/^https?:\/\//, "").split("/")[0] || rawUrl;
+  }
+}
+
 function localStatusText(s: OllamaStatus | null): string {
   if (!s) return "Checking";
   if (s.state === "ready") return s.version ? `Ollama ${s.version}` : "Running";
@@ -128,11 +136,32 @@ export function App() {
   }
 
   useEffect(() => {
+    let isActive = true;
+
     void (async () => {
-      try { setProfileName((await window.robin.app.getProfile()).name || "there"); }
-      catch { setProfileName("there"); }
-      await Promise.all([refreshStatus(), refreshThreads()]);
+      try {
+        const profile = await window.robin.app.getProfile();
+        if (isActive) {
+          setProfileName(profile.name || "there");
+        }
+      } catch {
+        if (isActive) {
+          setProfileName("there");
+        }
+      }
+
+      try {
+        await Promise.all([refreshStatus(), refreshThreads()]);
+      } catch (e) {
+        if (isActive) {
+          setError(e instanceof Error ? e.message : "Could not load Robin state.");
+        }
+      }
     })();
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -374,7 +403,7 @@ export function App() {
                         <div className="citation-list">
                           {msg.citations.map((c) => (
                             <button key={c.url} className="citation" onClick={() => { void window.robin.app.openExternal(c.url); }}>
-                              <span className="citation-title">{c.title}</span> — {new URL(c.url).hostname}
+                              <span className="citation-title">{c.title}</span> — {safeCitationHost(c.url)}
                             </button>
                           ))}
                         </div>

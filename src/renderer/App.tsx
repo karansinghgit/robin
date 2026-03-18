@@ -7,6 +7,8 @@ import remarkGfm from "remark-gfm";
 import {
   AssistantMode,
   CLOUD_PROVIDER_IDS,
+  ChatAttachment,
+  CloudModelCatalogItem,
   CloudProviderId,
   ConversationThread,
   LocalModelCatalogItem,
@@ -14,9 +16,9 @@ import {
   ProviderStatus,
   RobinBridge,
   SaveConfigInput,
-  ThreadSummary
+  ThreadSummary,
+  UpdateCheckResult
 } from "../shared/contracts";
-import providerPlaceholderLogo from "./assets/provider-logos/placeholder.svg";
 
 const FALLBACK_DASHBOARD_ICON: IconSvgElement = [
   ["path", { d: "M13.6903 19.4567C13.5 18.9973 13.5 18.4149 13.5 17.25C13.5 16.0851 13.5 15.5027 13.6903 15.0433C13.944 14.4307 14.4307 13.944 15.0433 13.6903C15.5027 13.5 16.0851 13.5 17.25 13.5C18.4149 13.5 18.9973 13.5 19.4567 13.6903C20.0693 13.944 20.556 14.4307 20.8097 15.0433C21 15.5027 21 16.0851 21 17.25C21 18.4149 21 18.9973 20.8097 19.4567C20.556 20.0693 20.0693 20.556 19.4567 20.8097C18.9973 21 18.4149 21 17.25 21C16.0851 21 15.5027 21 15.0433 20.8097C14.4307 20.556 13.944 20.0693 13.6903 19.4567Z", stroke: "currentColor", strokeLinecap: "square", strokeLinejoin: "round", strokeWidth: "1.5", key: "0" }],
@@ -36,20 +38,19 @@ const Settings02Icon = FALLBACK_SETTINGS_ICON;
 interface CloudProviderMeta {
   id: CloudProviderId;
   label: string;
-  keyPlaceholder: string;
 }
 
 const CLOUD_PROVIDERS: CloudProviderMeta[] = [
-  { id: "openai", label: "ChatGPT (OpenAI)", keyPlaceholder: "sk-proj-..." },
-  { id: "anthropic", label: "Claude (Anthropic)", keyPlaceholder: "sk-ant-..." },
-  { id: "google", label: "Gemini (Google)", keyPlaceholder: "AIza..." },
-  { id: "perplexity", label: "Perplexity", keyPlaceholder: "pplx-..." },
-  { id: "openrouter", label: "OpenRouter", keyPlaceholder: "sk-or-..." }
+  { id: "openai", label: "OpenAI" },
+  { id: "anthropic", label: "Anthropic" },
+  { id: "google", label: "Google" },
+  { id: "perplexity", label: "Perplexity" },
+  { id: "openrouter", label: "OpenRouter" }
 ];
 
 type SettingsModeTab = "cloud" | "local";
 
-type SettingsSectionId = "models" | "shortcut";
+type SettingsSectionId = "models" | "shortcut" | "updates";
 
 const SHORTCUT_PRESETS = [
   { label: "Cmd/Ctrl + Shift + Space", value: "CommandOrControl+Shift+Space" },
@@ -79,6 +80,52 @@ function buildProviderDrafts(): Record<CloudProviderId, string> {
     result[id] = "";
     return result;
   }, {} as Record<CloudProviderId, string>);
+}
+
+function normalizeCloudProviderKeys(
+  source?: Partial<Record<CloudProviderId, boolean>>
+): Record<CloudProviderId, boolean> {
+  return CLOUD_PROVIDER_IDS.reduce((result, id) => {
+    result[id] = Boolean(source?.[id]);
+    return result;
+  }, {} as Record<CloudProviderId, boolean>);
+}
+
+function normalizeProviderKeyDrafts(
+  source?: Partial<Record<CloudProviderId, string>>
+): Record<CloudProviderId, string> {
+  return CLOUD_PROVIDER_IDS.reduce((result, id) => {
+    result[id] = typeof source?.[id] === "string" ? source[id] ?? "" : "";
+    return result;
+  }, {} as Record<CloudProviderId, string>);
+}
+
+function normalizeSelectedCloudModels(
+  source?: Partial<Record<CloudProviderId, string[]>>
+): Record<CloudProviderId, string[]> {
+  return CLOUD_PROVIDER_IDS.reduce((result, id) => {
+    const candidate = source?.[id];
+    if (!Array.isArray(candidate)) {
+      result[id] = [];
+      return result;
+    }
+    result[id] = Array.from(
+      new Set(
+        candidate
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      )
+    );
+    return result;
+  }, {} as Record<CloudProviderId, string[]>);
+}
+
+function buildCloudProviderStateMap<T>(factory: (providerId: CloudProviderId) => T): Record<CloudProviderId, T> {
+  return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
+    result[providerId] = factory(providerId);
+    return result;
+  }, {} as Record<CloudProviderId, T>);
 }
 
 function formatModelFootprint(sizeMb: number): string {
@@ -183,8 +230,223 @@ function IconChevron() {
   );
 }
 
+function IconPlus() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 5V19" />
+      <path d="M5 12H19" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6 6L18 18" />
+      <path d="M18 6L6 18" />
+    </svg>
+  );
+}
+
+function IconImage() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3.5" y="5" width="17" height="14" rx="2.5" ry="2.5" />
+      <circle cx="9" cy="10" r="1.4" />
+      <path d="M20.5 15L15.5 11L11 15.5L9 13.8L3.5 18.4" />
+    </svg>
+  );
+}
+
+interface DropdownOption {
+  value: string;
+  label: string;
+  group?: string;
+}
+
+function ThemedDropdown({
+  value,
+  options,
+  placeholder,
+  onChange,
+  disabled,
+  compact = false,
+  borderless = false,
+  menuDirection = "down",
+  className
+}: {
+  value: string;
+  options: DropdownOption[];
+  placeholder: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  compact?: boolean;
+  borderless?: boolean;
+  menuDirection?: "down" | "up";
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && rootRef.current?.contains(target)) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const selected = options.find((option) => option.value === value);
+  const label = selected?.label ?? placeholder;
+  const renderedOptions: React.ReactNode[] = [];
+  let activeGroup = "";
+
+  for (const option of options) {
+    if (option.group && option.group !== activeGroup) {
+      activeGroup = option.group;
+      renderedOptions.push(
+        <div key={`group-${option.group}`} className="themed-dropdown-group">{option.group}</div>
+      );
+    }
+    renderedOptions.push(
+      <button
+        key={option.value}
+        type="button"
+        className={`themed-dropdown-option${option.value === value ? " themed-dropdown-option-active" : ""}`}
+        onClick={() => {
+          onChange(option.value);
+          setOpen(false);
+        }}
+      >
+        {option.label}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={rootRef} className={`themed-dropdown${className ? ` ${className}` : ""}`}>
+      <button
+        type="button"
+        className={
+          `themed-dropdown-trigger${open ? " themed-dropdown-trigger-open" : ""}`
+          + `${compact ? " themed-dropdown-trigger-compact" : ""}`
+          + `${borderless ? " themed-dropdown-trigger-borderless" : ""}`
+        }
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className={`themed-dropdown-label${selected ? "" : " themed-dropdown-label-placeholder"}`}>{label}</span>
+        <span className={`themed-dropdown-arrow${open ? " themed-dropdown-arrow-open" : ""}`}>
+          <IconChevron />
+        </span>
+      </button>
+      {open ? (
+        <div
+          className={`themed-dropdown-menu${menuDirection === "up" ? " themed-dropdown-menu-up" : ""}`}
+          role="listbox"
+        >
+          {renderedOptions.length > 0 ? renderedOptions : (
+            <div className="themed-dropdown-empty">No options available</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ErrorBanner({
+  message,
+  onClose
+}: {
+  message: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="error-banner" role="alert">
+      <p className="error-banner-text">{message}</p>
+      <button
+        type="button"
+        className="error-banner-close"
+        aria-label="Dismiss error"
+        title="Dismiss"
+        onClick={onClose}
+      >
+        <IconClose />
+      </button>
+    </div>
+  );
+}
+
 function modelKey(mode: AssistantMode, model: string): string {
   return `${mode}:${model}`;
+}
+
+function cloudComposerValue(provider: CloudProviderId, model: string): string {
+  return `cloud:${provider}:${encodeURIComponent(model)}`;
+}
+
+function localComposerValue(model: string): string {
+  return `local:${model}`;
+}
+
+function parseComposerValue(value: string): (
+  | { mode: "local"; model: string }
+  | { mode: "search"; provider: CloudProviderId; model: string }
+  | { mode: "unknown" }
+) {
+  if (value.startsWith("local:")) {
+    return { mode: "local", model: value.slice(6) };
+  }
+
+  if (!value.startsWith("cloud:")) {
+    return { mode: "unknown" };
+  }
+
+  const segments = value.split(":");
+  const providerRaw = segments[1] ?? "";
+  const provider = CLOUD_PROVIDER_IDS.find((providerId) => providerId === providerRaw);
+  if (!provider) {
+    return { mode: "unknown" };
+  }
+
+  const encodedModel = segments.slice(2).join(":");
+  let model = encodedModel;
+  try {
+    model = decodeURIComponent(encodedModel);
+  } catch {
+    model = encodedModel;
+  }
+
+  if (!model.trim()) {
+    return { mode: "unknown" };
+  }
+
+  return {
+    mode: "search",
+    provider,
+    model
+  };
 }
 
 function parseModelKey(value: string): { mode: AssistantMode; model: string } {
@@ -195,6 +457,12 @@ function parseModelKey(value: string): { mode: AssistantMode; model: string } {
 function shortName(value: string): string {
   const parsed = parseModelKey(value).model;
   return parsed.split("/").pop() || parsed || "—";
+}
+
+function resolveCloudProviderId(raw: string, fallback: CloudProviderId = "openai"): CloudProviderId {
+  const normalized = raw.trim().toLowerCase();
+  const found = CLOUD_PROVIDER_IDS.find((providerId) => providerId === normalized);
+  return found ?? fallback;
 }
 
 function safeCitationHost(rawUrl: string): string {
@@ -222,6 +490,23 @@ function localStatusText(status: OllamaStatus | null): string {
 }
 
 const OLLAMA_DOWNLOAD_URL = "https://ollama.com/download/";
+const MAX_IMAGE_ATTACHMENTS = 4;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Could not read image."));
+        return;
+      }
+      resolve(reader.result);
+    };
+    reader.onerror = () => reject(new Error("Could not read image."));
+    reader.readAsDataURL(file);
+  });
+}
 
 function ollamaDotClass(status: OllamaStatus | null): string {
   if (!status) return "ollama-dot ollama-dot-off";
@@ -245,6 +530,14 @@ function errorMessage(error: unknown, fallback: string): string {
     return "Could not reach Ollama. Start Ollama and retry.";
   }
 
+  if (
+    /chat is not wired yet/i.test(message) ||
+    /providers:list-cloud-models/i.test(message) ||
+    /configure a model to use robin/i.test(message)
+  ) {
+    return "Add a cloud API key in Settings or switch to Local mode.";
+  }
+
   return message;
 }
 
@@ -262,7 +555,8 @@ export function App() {
   const [settingsMode, setSettingsMode] = useState<SettingsModeTab>("cloud");
   const [settingsSections, setSettingsSections] = useState<Record<SettingsSectionId, boolean>>({
     models: true,
-    shortcut: false
+    shortcut: false,
+    updates: false
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
@@ -271,19 +565,39 @@ export function App() {
   const [activeThread, setActiveThread] = useState<ConversationThread | null>(null);
   const [prompt, setPrompt] = useState("");
   const [shortcutDraft, setShortcutDraft] = useState("CommandOrControl+Shift+Space");
-  const [activeModelDraft, setActiveModelDraft] = useState(modelKey("search", "sonar"));
+  const [activeModelDraft, setActiveModelDraft] = useState(modelKey("search", ""));
   const [providerKeyDrafts, setProviderKeyDrafts] = useState<Record<CloudProviderId, string>>(() => buildProviderDrafts());
+  const [selectedCloudModelsDraft, setSelectedCloudModelsDraft] = useState<Record<CloudProviderId, string[]>>(() => normalizeSelectedCloudModels());
   const [customLocalModelDraft, setCustomLocalModelDraft] = useState("");
   const [localCatalog, setLocalCatalog] = useState<LocalModelCatalogItem[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [cloudModelsByProvider, setCloudModelsByProvider] = useState<Record<CloudProviderId, CloudModelCatalogItem[]>>(
+    () => buildCloudProviderStateMap(() => [])
+  );
+  const [cloudModelsLoadingByProvider, setCloudModelsLoadingByProvider] = useState<Record<CloudProviderId, boolean>>(
+    () => buildCloudProviderStateMap(() => false)
+  );
+  const [cloudModelsErrorByProvider, setCloudModelsErrorByProvider] = useState<Record<CloudProviderId, string | null>>(
+    () => buildCloudProviderStateMap(() => null)
+  );
+  const [cloudModelDraft, setCloudModelDraft] = useState("");
+  const [cloudModeDraft, setCloudModeDraft] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [pullingModel, setPullingModel] = useState<string | null>(null);
+  const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const [localModelNotice, setLocalModelNotice] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState("");
+  const [updatesChecking, setUpdatesChecking] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamSequenceRef = useRef(0);
   const messages = activeThread?.messages ?? [];
 
   useEffect(() => {
@@ -292,6 +606,10 @@ export function App() {
 
   const localModels = ollamaStatus?.models ?? [];
   const localModelSet = useMemo(() => new Set(localModels.map((model) => model.toLowerCase())), [localModels]);
+  const configuredCloudProviders = useMemo(
+    () => CLOUD_PROVIDERS.filter((provider) => Boolean(status?.cloudProviderKeys?.[provider.id])),
+    [status?.cloudProviderKeys]
+  );
   const displayName = profileName.toLowerCase().startsWith("karan") ? "Karan" : profileName;
 
   const catalogForDisplay = useMemo(() => {
@@ -342,7 +660,15 @@ export function App() {
     const robin = getRobinBridge();
     const list = await robin.chat.listThreads();
     setThreads(list);
-    const id = selectedId ?? activeThread?.id ?? list[0]?.id;
+
+    const hasPreferred = Boolean(selectedId && list.some((thread) => thread.id === selectedId));
+    const hasCurrent = Boolean(activeThread?.id && list.some((thread) => thread.id === activeThread.id));
+    const id = hasPreferred
+      ? selectedId
+      : hasCurrent
+        ? activeThread?.id
+        : list[0]?.id;
+
     if (!id) {
       setActiveThread(null);
       return;
@@ -352,15 +678,24 @@ export function App() {
 
   async function refreshStatus() {
     const robin = getRobinBridge();
-    const [nextStatus, nextOllamaStatus] = await Promise.all([robin.providers.getStatus(), robin.ollama.detect()]);
+    const [rawStatus, nextOllamaStatus] = await Promise.all([robin.providers.getStatus(), robin.ollama.detect()]);
+    const nextStatus: ProviderStatus = {
+      ...rawStatus,
+      cloudProviderKeys: normalizeCloudProviderKeys(rawStatus.cloudProviderKeys),
+      providerApiKeys: normalizeProviderKeyDrafts(rawStatus.providerApiKeys),
+      selectedCloudModels: normalizeSelectedCloudModels(rawStatus.selectedCloudModels)
+    };
     setStatus(nextStatus);
+    setProviderKeyDrafts(nextStatus.providerApiKeys);
+    setSelectedCloudModelsDraft(nextStatus.selectedCloudModels);
     setOllamaStatus(nextOllamaStatus);
     setShortcutDraft(nextStatus.shortcut);
     setSettingsMode(nextStatus.preferredMode === "local" ? "local" : "cloud");
+    const hasActiveCloudKey = Boolean(nextStatus.cloudProviderKeys?.[nextStatus.activeCloudProvider]);
     setActiveModelDraft(
       nextStatus.preferredMode === "local"
         ? modelKey("local", nextStatus.ollama.selectedModel || nextOllamaStatus.selectedModel || "")
-        : modelKey("search", nextStatus.perplexity.model)
+        : modelKey("search", hasActiveCloudKey ? nextStatus.activeCloudProvider : "")
     );
   }
 
@@ -382,12 +717,78 @@ export function App() {
     }
   }
 
+  async function loadCloudModels(provider: CloudProviderId) {
+    if (cloudModelsLoadingByProvider[provider]) {
+      return;
+    }
+
+    try {
+      setCloudModelsLoadingByProvider((current) => ({
+        ...current,
+        [provider]: true
+      }));
+      setCloudModelsErrorByProvider((current) => ({
+        ...current,
+        [provider]: null
+      }));
+      const result = await getRobinBridge().providers.listCloudModels(provider);
+      const nextModels = result.models;
+      setCloudModelsByProvider((current) => ({
+        ...current,
+        [provider]: nextModels
+      }));
+
+      const activeSelection = parseModelKey(activeModelDraft);
+      const activeProvider = activeSelection.mode === "search"
+        ? CLOUD_PROVIDER_IDS.find((providerId) => providerId === activeSelection.model.trim().toLowerCase())
+        : undefined;
+
+      if (activeProvider === provider) {
+        const selectedIds = new Set(selectedCloudModelsDraft[provider] ?? []);
+        const selectableModels = nextModels.filter((model) => selectedIds.has(model.id));
+        const nextSelectedModel = selectableModels.find((model) => model.id === cloudModelDraft)?.id ?? selectableModels[0]?.id ?? "";
+        setCloudModelDraft(nextSelectedModel);
+        const modeOptions = selectableModels.find((model) => model.id === nextSelectedModel)?.modes ?? [];
+        if (provider === "openai") {
+          const nextSelectedMode = modeOptions.find((mode) => mode === cloudModeDraft) ?? modeOptions[0] ?? "";
+          setCloudModeDraft(nextSelectedMode);
+        } else {
+          setCloudModeDraft("");
+        }
+      }
+    } catch (cloudModelsFetchError) {
+      setCloudModelsByProvider((current) => ({
+        ...current,
+        [provider]: []
+      }));
+      const activeSelection = parseModelKey(activeModelDraft);
+      const activeProvider = activeSelection.mode === "search"
+        ? CLOUD_PROVIDER_IDS.find((providerId) => providerId === activeSelection.model.trim().toLowerCase())
+        : undefined;
+      if (activeProvider === provider) {
+        setCloudModelDraft("");
+        if (provider === "openai") {
+          setCloudModeDraft("");
+        }
+      }
+      setCloudModelsErrorByProvider((current) => ({
+        ...current,
+        [provider]: errorMessage(cloudModelsFetchError, "Could not load cloud models.")
+      }));
+    } finally {
+      setCloudModelsLoadingByProvider((current) => ({
+        ...current,
+        [provider]: false
+      }));
+    }
+  }
+
   useEffect(() => {
     let isActive = true;
 
     void (async () => {
+      const robin = getRobinBridge();
       try {
-        const robin = getRobinBridge();
         const profile = await robin.app.getProfile();
         if (isActive) {
           setProfileName(profile.name || "there");
@@ -395,6 +796,17 @@ export function App() {
       } catch {
         if (isActive) {
           setProfileName("there");
+        }
+      }
+
+      try {
+        const version = await robin.app.getVersion();
+        if (isActive) {
+          setAppVersion(version);
+        }
+      } catch {
+        if (isActive) {
+          setAppVersion("");
         }
       }
 
@@ -418,6 +830,66 @@ export function App() {
     }
     void loadLocalCatalog();
   }, [screen, settingsMode, localCatalog.length]);
+
+  useEffect(() => {
+    if (!status?.cloudProviderKeys) {
+      return;
+    }
+
+    for (const providerId of CLOUD_PROVIDER_IDS) {
+      if (!status.cloudProviderKeys[providerId]) {
+        continue;
+      }
+      void loadCloudModels(providerId);
+    }
+  }, [
+    status?.cloudProviderKeys?.openai,
+    status?.cloudProviderKeys?.anthropic,
+    status?.cloudProviderKeys?.google,
+    status?.cloudProviderKeys?.perplexity,
+    status?.cloudProviderKeys?.openrouter
+  ]);
+
+  useEffect(() => {
+    const parsed = parseModelKey(activeModelDraft);
+    const provider = parsed.mode === "search"
+      ? CLOUD_PROVIDER_IDS.find((providerId) => providerId === parsed.model.trim().toLowerCase())
+      : undefined;
+
+    if (!provider) {
+      return;
+    }
+
+    const providerModels = cloudModelsByProvider[provider] ?? [];
+    const selectedIds = new Set(selectedCloudModelsDraft[provider] ?? []);
+    const selectableModels = providerModels.filter((model) => selectedIds.has(model.id));
+
+    if (selectableModels.length === 0) {
+      if (cloudModelDraft) {
+        setCloudModelDraft("");
+      }
+      if (provider === "openai" && cloudModeDraft) {
+        setCloudModeDraft("");
+      }
+      return;
+    }
+
+    const stillSelected = selectableModels.find((model) => model.id === cloudModelDraft);
+    if (!stillSelected) {
+      const first = selectableModels[0];
+      setCloudModelDraft(first.id);
+      if (provider === "openai") {
+        setCloudModeDraft(first.modes[0] ?? "");
+      } else if (cloudModeDraft) {
+        setCloudModeDraft("");
+      }
+      return;
+    }
+
+    if (provider === "openai" && !stillSelected.modes.includes(cloudModeDraft)) {
+      setCloudModeDraft(stillSelected.modes[0] ?? "");
+    }
+  }, [activeModelDraft, cloudModelsByProvider, selectedCloudModelsDraft, cloudModelDraft, cloudModeDraft]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -448,6 +920,23 @@ export function App() {
     }
   }, []);
 
+  function stopPendingResponse() {
+    streamSequenceRef.current += 1;
+    if (streamWatchdogRef.current) {
+      clearTimeout(streamWatchdogRef.current);
+      streamWatchdogRef.current = null;
+    }
+    setIsStreaming(false);
+    setActiveThread((current) => current
+      ? {
+          ...current,
+          messages: current.messages.map((message) => (
+            message.status === "streaming" ? { ...message, status: "complete" } : message
+          ))
+        }
+      : current);
+  }
+
   async function persistConfig(patch: SaveConfigInput) {
     try {
       setError(null);
@@ -464,12 +953,21 @@ export function App() {
   async function setPreferredMode(next: SettingsModeTab) {
     setSettingsMode(next);
     if (next === "cloud") {
-      const nextCloudModel = status?.perplexity.model || "sonar";
-      setActiveModelDraft(modelKey("search", nextCloudModel));
-      await persistConfig({
-        preferredMode: "search",
-        perplexityModel: nextCloudModel
-      });
+      const hasSavedActiveCloudProvider = status
+        ? Boolean(status.cloudProviderKeys?.[status.activeCloudProvider])
+        : false;
+      const nextCloudProvider = hasSavedActiveCloudProvider
+        ? status?.activeCloudProvider
+        : configuredCloudProviders[0]?.id;
+      setActiveModelDraft(modelKey("search", nextCloudProvider ?? ""));
+      await persistConfig(nextCloudProvider
+        ? {
+            preferredMode: "search",
+            activeCloudProvider: nextCloudProvider
+          }
+        : {
+            preferredMode: "search"
+          });
       return;
     }
 
@@ -483,15 +981,28 @@ export function App() {
 
   async function applyModelSelection(nextModelKey: string) {
     const next = parseModelKey(nextModelKey);
+    if (next.mode === "search" && !next.model) {
+      setActiveModelDraft(modelKey("search", ""));
+      await persistConfig({
+        preferredMode: "search"
+      });
+      return;
+    }
     if (next.mode === "local" && next.model && !localModelSet.has(next.model.toLowerCase())) {
       setError(`${next.model} is not downloaded yet. Download it first, then activate.`);
       return;
     }
     setActiveModelDraft(nextModelKey);
     if (next.mode === "search") {
+      const nextCloudProvider = CLOUD_PROVIDER_IDS.find((providerId) => providerId === next.model.trim().toLowerCase());
+      if (!nextCloudProvider) {
+        setError("Select a valid cloud provider.");
+        return;
+      }
+      setActiveModelDraft(modelKey("search", nextCloudProvider));
       await persistConfig({
         preferredMode: "search",
-        perplexityModel: next.model || status?.perplexity.model || "sonar"
+        activeCloudProvider: nextCloudProvider
       });
       return;
     }
@@ -501,20 +1012,62 @@ export function App() {
     });
   }
 
-  async function saveProviderKey(providerId: CloudProviderId) {
-    const candidate = providerKeyDrafts[providerId].trim();
-    if (!candidate) {
+  async function applyComposerSelection(nextValue: string) {
+    const parsedSelection = parseComposerValue(nextValue);
+    if (parsedSelection.mode === "unknown") {
+      setError("Select a valid model.");
       return;
     }
+
+    if (parsedSelection.mode === "local") {
+      await applyModelSelection(modelKey("local", parsedSelection.model));
+      return;
+    }
+
+    const provider = parsedSelection.provider;
+    const modelId = parsedSelection.model;
+    setError(null);
+    setActiveModelDraft(modelKey("search", provider));
+    setCloudModelDraft(modelId);
+
+    const modeOptions = (cloudModelsByProvider[provider] ?? []).find((model) => model.id === modelId)?.modes ?? [];
+    if (provider === "openai") {
+      const nextMode = modeOptions.find((mode) => mode === cloudModeDraft) ?? modeOptions[0] ?? "";
+      setCloudModeDraft(nextMode);
+    } else {
+      setCloudModeDraft("");
+    }
+
+    await persistConfig({
+      preferredMode: "search",
+      activeCloudProvider: provider
+    });
+  }
+
+  async function saveProviderKey(providerId: CloudProviderId) {
     await persistConfig({
       providerApiKeys: {
-        [providerId]: candidate
+        [providerId]: providerKeyDrafts[providerId]
       }
     });
-    setProviderKeyDrafts((current) => ({
-      ...current,
-      [providerId]: ""
+  }
+
+  async function toggleSelectedCloudModel(providerId: CloudProviderId, modelId: string) {
+    const current = selectedCloudModelsDraft[providerId] ?? [];
+    const next = current.includes(modelId)
+      ? current.filter((item) => item !== modelId)
+      : [...current, modelId];
+
+    setSelectedCloudModelsDraft((prev) => ({
+      ...prev,
+      [providerId]: next
     }));
+
+    await persistConfig({
+      selectedCloudModels: {
+        [providerId]: next
+      }
+    });
   }
 
   async function saveShortcutDraft(nextShortcut?: string) {
@@ -540,6 +1093,22 @@ export function App() {
       ...current,
       [sectionId]: !current[sectionId]
     }));
+  }
+
+  async function checkForUpdatesNow() {
+    try {
+      setUpdateError(null);
+      setUpdatesChecking(true);
+      const result = await getRobinBridge().app.checkForUpdates();
+      setUpdateInfo(result);
+      if (!appVersion) {
+        setAppVersion(result.currentVersion);
+      }
+    } catch (updatesError) {
+      setUpdateError(errorMessage(updatesError, "Could not check updates."));
+    } finally {
+      setUpdatesChecking(false);
+    }
   }
 
   async function useOrPullLocalModel(model: string) {
@@ -597,9 +1166,114 @@ export function App() {
     setCustomLocalModelDraft("");
   }
 
+  async function deleteLocalModel(model: string) {
+    const targetModel = model.trim();
+    if (!targetModel) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setLocalModelNotice(null);
+      setDeletingModel(targetModel);
+      await getRobinBridge().ollama.deleteModel(targetModel);
+
+      const robin = getRobinBridge();
+      const nextOllamaStatus = await robin.ollama.detect();
+      setOllamaStatus(nextOllamaStatus);
+
+      const parsed = parseModelKey(activeModelDraft);
+      if (parsed.mode === "local" && parsed.model.toLowerCase() === targetModel.toLowerCase()) {
+        const fallbackModel = nextOllamaStatus.selectedModel || "";
+        await applyModelSelection(modelKey("local", fallbackModel));
+      } else {
+        await refreshStatus();
+      }
+      setLocalModelNotice(`${targetModel} deleted.`);
+    } catch (deleteError) {
+      setError(errorMessage(deleteError, `Could not delete ${targetModel}.`));
+    } finally {
+      setDeletingModel(null);
+    }
+  }
+
+  async function addImagesFromFiles(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
+    const imageFiles = files.filter((file) => file.type.toLowerCase().startsWith("image/"));
+    if (imageFiles.length === 0) {
+      setError("Only image files are supported.");
+      return;
+    }
+
+    const remainingSlots = MAX_IMAGE_ATTACHMENTS - pendingAttachments.length;
+    if (remainingSlots <= 0) {
+      setError(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`);
+      return;
+    }
+
+    const accepted = imageFiles.slice(0, remainingSlots);
+    const nextAttachments: ChatAttachment[] = [];
+
+    for (const file of accepted) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        setError(`"${file.name}" is too large. Use images under ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB.`);
+        continue;
+      }
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        nextAttachments.push({
+          id: crypto.randomUUID(),
+          name: file.name || "image",
+          mimeType: file.type || "image/png",
+          dataUrl
+        });
+      } catch {
+        setError(`Could not read "${file.name}".`);
+      }
+    }
+
+    if (nextAttachments.length > 0) {
+      setError(null);
+      setPendingAttachments((current) => [...current, ...nextAttachments]);
+    }
+
+    if (imageFiles.length > accepted.length) {
+      setError(`Only ${MAX_IMAGE_ATTACHMENTS} images can be attached at once.`);
+    }
+  }
+
+  function removePendingAttachment(attachmentId: string) {
+    setPendingAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+  }
+
   async function sendPrompt() {
-    if (!prompt.trim() || isStreaming) return;
+    if (!prompt.trim() && pendingAttachments.length === 0) return;
+    if (isStreaming) {
+      stopPendingResponse();
+    }
     const parsed = parseModelKey(activeModelDraft);
+    const selectedCloudProvider = parsed.mode === "search"
+      ? CLOUD_PROVIDER_IDS.find((providerId) => providerId === parsed.model.trim().toLowerCase())
+      : undefined;
+
+    if (parsed.mode === "search" && !selectedCloudProvider) {
+      setError("Select a cloud model first.");
+      return;
+    }
+    if (selectedCloudProvider) {
+      const selectedModels = selectedCloudModelsDraft[selectedCloudProvider] ?? [];
+      if (selectedModels.length === 0) {
+        setError("Select at least one cloud model in Settings first.");
+        return;
+      }
+      if (!cloudModelDraft || !selectedModels.includes(cloudModelDraft)) {
+        setError("Pick one of your selected cloud models.");
+        return;
+      }
+    }
     if (parsed.mode === "local" && ollamaStatus?.state === "not_installed") {
       setError("Ollama is not installed yet. Opening download page.");
       try {
@@ -613,26 +1287,51 @@ export function App() {
       setError("Select or download a local model first.");
       return;
     }
+    if (parsed.mode === "local" && pendingAttachments.length > 0) {
+      setError("Image input is not supported in Local mode yet.");
+      return;
+    }
     setError(null);
+    const streamToken = streamSequenceRef.current + 1;
+    streamSequenceRef.current = streamToken;
     if (streamWatchdogRef.current) {
       clearTimeout(streamWatchdogRef.current);
     }
     streamWatchdogRef.current = setTimeout(() => {
+      if (streamToken !== streamSequenceRef.current) {
+        return;
+      }
       setIsStreaming(false);
       setError("Model response timed out. Try again or switch model.");
     }, 30000);
     setIsStreaming(true);
     const text = prompt.trim();
+    const outgoingAttachments = pendingAttachments;
     setPrompt("");
+    setPendingAttachments([]);
     try {
       await getRobinBridge().chat.streamReply(
-        { conversationId: activeThread?.id, mode: parsed.mode, prompt: text },
+        {
+          conversationId: activeThread?.id,
+          mode: parsed.mode,
+          prompt: text,
+          attachments: outgoingAttachments.length > 0 ? outgoingAttachments : undefined,
+          cloudProvider: selectedCloudProvider,
+          cloudModel: selectedCloudProvider ? cloudModelDraft || undefined : undefined,
+          cloudMode: selectedCloudProvider === "openai" ? cloudModeDraft || undefined : undefined
+        },
         {
           onThread: ({ thread }) => {
+            if (streamToken !== streamSequenceRef.current) {
+              return;
+            }
             setActiveThread({ ...thread });
             void refreshThreads(thread.id);
           },
           onDelta: ({ messageId, delta }) => {
+            if (streamToken !== streamSequenceRef.current) {
+              return;
+            }
             setActiveThread((current) => current
               ? {
                   ...current,
@@ -645,6 +1344,9 @@ export function App() {
               : current);
           },
           onCitations: ({ messageId, citations }) => {
+            if (streamToken !== streamSequenceRef.current) {
+              return;
+            }
             setActiveThread((current) => current
               ? {
                   ...current,
@@ -655,6 +1357,9 @@ export function App() {
               : current);
           },
           onDone: ({ thread }) => {
+            if (streamToken !== streamSequenceRef.current) {
+              return;
+            }
             setIsStreaming(false);
             if (streamWatchdogRef.current) {
               clearTimeout(streamWatchdogRef.current);
@@ -664,6 +1369,9 @@ export function App() {
             void refreshThreads(thread.id);
           },
           onError: ({ message }) => {
+            if (streamToken !== streamSequenceRef.current) {
+              return;
+            }
             setIsStreaming(false);
             if (streamWatchdogRef.current) {
               clearTimeout(streamWatchdogRef.current);
@@ -675,12 +1383,16 @@ export function App() {
         }
       );
     } catch (streamError) {
+      if (streamToken !== streamSequenceRef.current) {
+        return;
+      }
       setIsStreaming(false);
       if (streamWatchdogRef.current) {
         clearTimeout(streamWatchdogRef.current);
         streamWatchdogRef.current = null;
       }
       setPrompt(text);
+      setPendingAttachments(outgoingAttachments);
       setError(errorMessage(streamError, "Could not start chat. Please retry."));
     }
   }
@@ -693,6 +1405,7 @@ export function App() {
   function startNewChat() {
     setActiveThread(null);
     setError(null);
+    setPendingAttachments([]);
     setScreen("chat");
   }
 
@@ -701,7 +1414,109 @@ export function App() {
     void refreshThreads(id);
   }
 
+  async function deleteThread(id: string) {
+    try {
+      setError(null);
+      await getRobinBridge().chat.deleteThread(id);
+      if (activeThread?.id === id) {
+        setActiveThread(null);
+      }
+      await refreshThreads();
+    } catch (deleteError) {
+      setError(errorMessage(deleteError, "Could not delete chat."));
+    }
+  }
+
   const parsed = parseModelKey(activeModelDraft);
+  const selectedCloudProvider = parsed.mode === "search"
+    ? CLOUD_PROVIDER_IDS.find((providerId) => providerId === parsed.model.trim().toLowerCase())
+    : undefined;
+  const isOpenAISelected = selectedCloudProvider === "openai";
+  const isCloudProviderSelected = Boolean(selectedCloudProvider);
+  const selectedCloudProviderModels = selectedCloudProvider
+    ? cloudModelsByProvider[selectedCloudProvider] ?? []
+    : [];
+  const selectedCloudProviderModelsLoading = selectedCloudProvider
+    ? cloudModelsLoadingByProvider[selectedCloudProvider]
+    : false;
+  const selectedCloudProviderModelsError = selectedCloudProvider
+    ? cloudModelsErrorByProvider[selectedCloudProvider]
+    : null;
+  const selectedPinnedModels = selectedCloudProvider ? selectedCloudModelsDraft[selectedCloudProvider] ?? [] : [];
+  const selectedPinnedModelSet = new Set(selectedPinnedModels);
+  const visibleCloudModels = selectedCloudProviderModels.filter((model) => selectedPinnedModelSet.has(model.id));
+  const selectedCloudModel = visibleCloudModels.find((model) => model.id === cloudModelDraft);
+  const cloudModeOptions: DropdownOption[] = (selectedCloudModel?.modes ?? []).map((mode) => ({
+    value: mode,
+    label: mode.toUpperCase()
+  }));
+  const composerCloudModelOptions = useMemo(() => {
+    const options: DropdownOption[] = [];
+
+    for (const provider of CLOUD_PROVIDERS) {
+      if (!status?.cloudProviderKeys?.[provider.id]) {
+        continue;
+      }
+
+      const selectedIds = selectedCloudModelsDraft[provider.id] ?? [];
+      if (selectedIds.length === 0) {
+        continue;
+      }
+
+      const loadedModels = cloudModelsByProvider[provider.id] ?? [];
+      const availableIds = new Set(loadedModels.map((model) => model.id));
+
+      for (const modelId of selectedIds) {
+        if (loadedModels.length > 0 && !availableIds.has(modelId)) {
+          continue;
+        }
+        options.push({
+          value: cloudComposerValue(provider.id, modelId),
+          label: modelId,
+          group: "Cloud"
+        });
+      }
+    }
+
+    return options;
+  }, [status?.cloudProviderKeys, selectedCloudModelsDraft, cloudModelsByProvider]);
+
+  const composerLocalOptions = localModels.map((model) => ({
+    value: localComposerValue(model),
+    label: model,
+    group: "Local"
+  }));
+
+  const composerOptions: DropdownOption[] = [
+    ...composerCloudModelOptions,
+    ...composerLocalOptions
+  ];
+
+  const hasComposerOptions = composerOptions.length > 0;
+  const composerSelectValue = (() => {
+    if (parsed.mode === "local") {
+      const localValue = localComposerValue(parsed.model);
+      return composerOptions.some((option) => option.value === localValue) ? localValue : "";
+    }
+    if (selectedCloudProvider && cloudModelDraft) {
+      const cloudValue = cloudComposerValue(selectedCloudProvider, cloudModelDraft);
+      return composerOptions.some((option) => option.value === cloudValue) ? cloudValue : "";
+    }
+    return "";
+  })();
+  const settingsCloudOptions: DropdownOption[] = CLOUD_PROVIDERS.map((provider) => ({
+    value: provider.id,
+    label: provider.label
+  }));
+  const settingsCloudValue = (() => {
+    if (!status) {
+      return "";
+    }
+    if (status.cloudProviderKeys?.[status.activeCloudProvider]) {
+      return status.activeCloudProvider;
+    }
+    return "";
+  })();
 
   return (
     <div className="robin-shell">
@@ -717,7 +1532,15 @@ export function App() {
           </button>
         </div>
 
-        <div className="toolbar-brand" aria-hidden="true">robin</div>
+        <button
+          type="button"
+          className="toolbar-brand"
+          title="New chat"
+          aria-label="New chat"
+          onClick={startNewChat}
+        >
+          robin
+        </button>
 
         <div className="toolbar-right">
           <button
@@ -733,7 +1556,18 @@ export function App() {
 
       <div className="chat-workspace">
         <aside className={`chat-sidebar${sidebarOpen ? " chat-sidebar-open" : ""}`}>
-          <div className="chat-sidebar-head">Chats</div>
+          <div className="chat-sidebar-head-row">
+            <div className="chat-sidebar-head">Chats</div>
+            <button
+              type="button"
+              className="chat-sidebar-new"
+              title="New chat"
+              aria-label="New chat"
+              onClick={startNewChat}
+            >
+              <IconPlus />
+            </button>
+          </div>
           <div className="chat-sidebar-list">
             {threads.length > 0 ? (
               threads.map((thread) => (
@@ -741,6 +1575,13 @@ export function App() {
                   key={thread.id}
                   className={`chat-sidebar-item${activeThread?.id === thread.id ? " chat-sidebar-item-active" : ""}`}
                   onClick={() => selectThread(thread.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    if (!window.confirm("Delete this chat?")) {
+                      return;
+                    }
+                    void deleteThread(thread.id);
+                  }}
                 >
                   {thread.title || thread.preview || "Untitled"}
                 </button>
@@ -768,7 +1609,9 @@ export function App() {
                 <h1 className="settings-pane-title">Settings</h1>
               </header>
 
-              {error && <div className="error-banner">{error}</div>}
+              {error ? (
+                <ErrorBanner message={error} onClose={() => setError(null)} />
+              ) : null}
 
               <section className="settings-pane-scroll">
                 <article className={`settings-accordion${settingsSections.models ? " settings-accordion-open" : ""}`}>
@@ -804,40 +1647,37 @@ export function App() {
                       {settingsMode === "cloud" ? (
                         <div className="setting-section setting-section-single">
                           <label className="field-label">Default cloud provider</label>
-                          <select
-                            className="field-input field-select"
-                            value={status?.activeCloudProvider ?? "perplexity"}
-                            onChange={(event) => {
-                              const providerId = event.target.value as CloudProviderId;
+                          <ThemedDropdown
+                            className="settings-cloud-dropdown"
+                            value={settingsCloudValue}
+                            options={settingsCloudOptions}
+                            placeholder="Select cloud provider"
+                            onChange={(nextValue) => {
+                              const providerId = resolveCloudProviderId(nextValue);
+                              setActiveModelDraft(modelKey("search", providerId));
                               void persistConfig({
                                 preferredMode: "search",
                                 activeCloudProvider: providerId
                               });
                             }}
-                          >
-                            {CLOUD_PROVIDERS.map((provider) => (
-                              <option key={provider.id} value={provider.id}>{provider.label}</option>
-                            ))}
-                          </select>
+                          />
 
                           <p className="setting-title">Provider Keys (BYOK)</p>
-                          <div className="provider-grid">
+                          <div className="provider-list">
                             {CLOUD_PROVIDERS.map((provider) => {
-                              const keySaved = status?.cloudProviderKeys?.[provider.id];
                               return (
-                                <article key={provider.id} className="provider-card">
-                                  <div className="provider-card-head">
-                                    <img className="provider-logo" src={providerPlaceholderLogo} alt={`${provider.label} logo`} />
-                                    <div className="provider-copy">
-                                      <p className="provider-name">{provider.label}</p>
-                                      <p className="provider-state">{keySaved ? "Key saved" : "No key added yet"}</p>
-                                    </div>
+                                <article key={provider.id} className="provider-row">
+                                  <div className="provider-row-label">
+                                    <p className="provider-name">{provider.label}</p>
                                   </div>
                                   <input
                                     className="field-input provider-key-input"
-                                    type="password"
-                                    placeholder={keySaved ? "Saved" : provider.keyPlaceholder}
+                                    type="text"
+                                    placeholder="No key added yet"
                                     value={providerKeyDrafts[provider.id]}
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                    spellCheck={false}
                                     onChange={(event) => {
                                       const value = event.target.value;
                                       setProviderKeyDrafts((current) => ({
@@ -857,10 +1697,54 @@ export function App() {
                               );
                             })}
                           </div>
+
+                          <div className="settings-cloud-models-panel">
+                            <p className="setting-title setting-title-sub">Models Visible In Chat</p>
+                            <div className="settings-cloud-provider-groups">
+                              {CLOUD_PROVIDERS.map((provider) => {
+                                const keyConfigured = Boolean(status?.cloudProviderKeys?.[provider.id]);
+                                const selectedForProvider = selectedCloudModelsDraft[provider.id] ?? [];
+                                const providerModels = cloudModelsByProvider[provider.id] ?? [];
+                                const providerModelsLoading = cloudModelsLoadingByProvider[provider.id];
+                                const providerModelsError = cloudModelsErrorByProvider[provider.id];
+
+                                return (
+                                  <section key={provider.id} className="settings-cloud-provider-group">
+                                    <p className="settings-cloud-provider-name">{provider.label}</p>
+                                    {!keyConfigured ? (
+                                      <p className="setting-note setting-note-tight">Add valid API key first.</p>
+                                    ) : providerModelsLoading ? (
+                                      <p className="setting-note setting-note-tight">Loading available models...</p>
+                                    ) : providerModelsError ? (
+                                      <p className="setting-note setting-note-tight">{providerModelsError}</p>
+                                    ) : providerModels.length === 0 ? (
+                                      <p className="setting-note setting-note-tight">No models found for this key.</p>
+                                    ) : (
+                                      <div className="settings-cloud-model-list">
+                                        {providerModels.map((model) => {
+                                          const checked = selectedForProvider.includes(model.id);
+                                          return (
+                                            <label key={model.id} className={`settings-cloud-model-item${checked ? " settings-cloud-model-item-active" : ""}`}>
+                                              <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => { void toggleSelectedCloudModel(provider.id, model.id); }}
+                                              />
+                                              <span>{model.id}</span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </section>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                       ) : (
                         <>
-                          <div className="setting-section">
+                          <div className="setting-section setting-section-first-after-tabs">
                             <div className="local-runtime-strip">
                               <div className="ollama-status">
                                 <span className={ollamaDotClass(ollamaStatus)} />
@@ -949,28 +1833,37 @@ export function App() {
                                       {group.items.map((item) => {
                                         const installed = localModelSet.has(item.model.toLowerCase());
                                         const busy = pullingModel === item.model;
+                                        const deleting = deletingModel === item.model;
                                         const fit = ramFitTier(item.minRamGb, status?.systemMemoryGb);
                                         return (
                                           <article key={item.id} className="catalog-item">
-                                            <div className="catalog-item-head">
-                                              <div className="catalog-item-main">
-                                                <p className="catalog-item-title">{item.title}</p>
-                                              </div>
+                                            <div className="catalog-item-main">
+                                              <p className="catalog-item-title">{item.title}</p>
+                                            </div>
+                                            <p className="catalog-item-metrics">
+                                              <span className={`ram-fit ram-fit-${fit.tone}`}>{fit.label}</span>
+                                              <span>{formatModelFootprint(item.estimatedSizeMb)} download</span>
+                                              <span>~{item.minRamGb} GB RAM</span>
+                                            </p>
+                                            <div className="catalog-item-actions">
                                               <button
                                                 className="inline-action-button catalog-action-button"
-                                                disabled={busy}
+                                                disabled={busy || deleting}
                                                 onClick={() => { void useOrPullLocalModel(item.model); }}
                                               >
                                                 {busy ? "Downloading..." : installed ? "Use" : "Download"}
                                               </button>
+                                              {installed ? (
+                                                <button
+                                                  className="inline-action-button catalog-action-button catalog-action-button-danger"
+                                                  disabled={busy || deleting}
+                                                  onClick={() => { void deleteLocalModel(item.model); }}
+                                                >
+                                                  {deleting ? "Deleting..." : "Delete"}
+                                                </button>
+                                              ) : null}
                                             </div>
-                                            <p className="catalog-item-metrics">
-                                              <span className="catalog-item-model">{item.model}</span>
-                                              <span className={`ram-fit ram-fit-${fit.tone}`}>{fit.label}</span>
-                                              <span>{formatModelFootprint(item.estimatedSizeMb)}</span>
-                                              <span>~{item.minRamGb} GB RAM</span>
-                                              <span>{item.pulls} pulls</span>
-                                            </p>
+                                            <p className="catalog-item-recommendation">Recommendation: {fit.label}</p>
                                           </article>
                                         );
                                       })}
@@ -1040,11 +1933,75 @@ export function App() {
                     </div>
                   ) : null}
                 </article>
+
+                <article className={`settings-accordion${settingsSections.updates ? " settings-accordion-open" : ""}`}>
+                  <button
+                    type="button"
+                    className="settings-accordion-trigger"
+                    aria-expanded={settingsSections.updates}
+                    onClick={() => toggleSettingsSection("updates")}
+                  >
+                    <span className="settings-accordion-label">Updates</span>
+                    <span className={`settings-accordion-arrow${settingsSections.updates ? " settings-accordion-arrow-open" : ""}`}>
+                      <IconChevron />
+                    </span>
+                  </button>
+
+                  {settingsSections.updates ? (
+                    <div className="settings-accordion-content">
+                      <div className="setting-section setting-section-single setting-section-last">
+                        <p className="setting-note setting-note-tight">
+                          Current version: {appVersion || "Unknown"}
+                        </p>
+                        <div className="updates-actions">
+                          <button
+                            type="button"
+                            className="inline-action-button"
+                            disabled={updatesChecking}
+                            onClick={() => { void checkForUpdatesNow(); }}
+                          >
+                            {updatesChecking ? "Checking..." : "Check for updates"}
+                          </button>
+                          {updateInfo?.updateAvailable && (updateInfo.downloadUrl || updateInfo.releaseUrl) ? (
+                            <button
+                              type="button"
+                              className="inline-action-button"
+                              onClick={() => {
+                                const target = updateInfo.downloadUrl || updateInfo.releaseUrl;
+                                if (target) {
+                                  void getRobinBridge().app.openExternal(target);
+                                }
+                              }}
+                            >
+                              Download update
+                            </button>
+                          ) : null}
+                        </div>
+                        {updateInfo ? (
+                          updateInfo.updateAvailable ? (
+                            <p className="setting-note setting-note-tight">
+                              Update available: {updateInfo.latestVersion}
+                            </p>
+                          ) : (
+                            <p className="setting-note setting-note-tight">
+                              You are up to date.
+                            </p>
+                          )
+                        ) : null}
+                        {updateError ? (
+                          <p className="setting-note setting-note-tight">{updateError}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
               </section>
             </>
           ) : (
             <>
-              {error && <div className="error-banner">{error}</div>}
+              {error ? (
+                <ErrorBanner message={error} onClose={() => setError(null)} />
+              ) : null}
 
               <section className={`chat-log${messages.length === 0 ? " chat-log-empty" : ""}`}>
                 {messages.length > 0 ? (
@@ -1056,6 +2013,18 @@ export function App() {
                       >
                         <span className="chat-msg-role">{message.role === "assistant" ? "Robin" : "You"}</span>
                         <div className="chat-msg-body">
+                          {message.attachments?.length ? (
+                            <div className="chat-msg-attachments">
+                              {message.attachments.map((attachment) => (
+                                <img
+                                  key={attachment.id}
+                                  className="chat-msg-attachment"
+                                  src={attachment.dataUrl}
+                                  alt={attachment.name || "Image attachment"}
+                                />
+                              ))}
+                            </div>
+                          ) : null}
                           {message.role === "assistant" ? (
                             <div className="md-content">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -1063,7 +2032,7 @@ export function App() {
                               </ReactMarkdown>
                             </div>
                           ) : (
-                            message.content
+                            message.content || null
                           )}
                           {message.citations?.length ? (
                             <div className="citation-list">
@@ -1092,12 +2061,32 @@ export function App() {
 
               <form className="composer" onSubmit={handleComposerSubmit}>
                 <div className="composer-box">
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="composer-file-input"
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files ?? []);
+                      event.target.value = "";
+                      void addImagesFromFiles(files);
+                    }}
+                  />
                   <textarea
                     className="composer-input"
                     placeholder="Ask Robin..."
                     rows={1}
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
+                    onPaste={(event) => {
+                      const pastedImages = Array.from(event.clipboardData?.files ?? [])
+                        .filter((file) => file.type.toLowerCase().startsWith("image/"));
+                      if (pastedImages.length > 0) {
+                        event.preventDefault();
+                        void addImagesFromFiles(pastedImages);
+                      }
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
@@ -1105,16 +2094,76 @@ export function App() {
                       }
                     }}
                   />
-                  <div className="composer-footer">
-                    <div className="composer-meta">
-                      <span className={`composer-dot ${parsed.mode === "search" ? "composer-dot-web" : "composer-dot-local"}`} />
-                      <span className="composer-model">
-                        {isStreaming ? "Thinking..." : `${parsed.mode === "search" ? "Cloud" : "Local"} • ${shortName(activeModelDraft)}`}
-                      </span>
+                  {pendingAttachments.length > 0 ? (
+                    <div className="composer-attachments">
+                      {pendingAttachments.map((attachment) => (
+                        <div key={attachment.id} className="composer-attachment-chip">
+                          <img
+                            className="composer-attachment-thumb"
+                            src={attachment.dataUrl}
+                            alt={attachment.name || "Attached image"}
+                          />
+                          <button
+                            type="button"
+                            className="composer-attachment-remove"
+                            aria-label="Remove image"
+                            onClick={() => removePendingAttachment(attachment.id)}
+                          >
+                            <IconClose />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                    <button type="submit" className="send-btn" disabled={!prompt.trim() || isStreaming}>
-                      <IconSend />
-                    </button>
+                  ) : null}
+                  <div className="composer-footer">
+                    <div className="composer-controls-row">
+                      <button
+                        type="button"
+                        className="composer-media-btn"
+                        aria-label="Attach image"
+                        title="Attach image"
+                        onClick={() => imageInputRef.current?.click()}
+                      >
+                        <IconImage />
+                      </button>
+                      <ThemedDropdown
+                        className="composer-dropdown"
+                        value={composerSelectValue}
+                        options={composerOptions}
+                        placeholder={hasComposerOptions ? "Select model" : "No models configured"}
+                        disabled={!hasComposerOptions}
+                        compact
+                        borderless
+                        menuDirection="up"
+                        onChange={(nextValue) => { void applyComposerSelection(nextValue); }}
+                      />
+                      {isOpenAISelected ? (
+                        <ThemedDropdown
+                          className="composer-cloud-mode-dropdown"
+                          value={cloudModeDraft}
+                          options={cloudModeOptions}
+                          placeholder="Mode"
+                          compact
+                          borderless
+                          menuDirection="up"
+                          onChange={setCloudModeDraft}
+                        />
+                      ) : null}
+                      <button type="submit" className="send-btn" disabled={!prompt.trim() && pendingAttachments.length === 0}>
+                        <IconSend />
+                      </button>
+                    </div>
+                    <div className="composer-cloud-notes">
+                      {isCloudProviderSelected ? (
+                        selectedCloudProviderModelsLoading ? (
+                          <p className="composer-cloud-note">Loading models...</p>
+                        ) : selectedCloudProviderModelsError ? (
+                          <p className="composer-cloud-note composer-cloud-note-error">{selectedCloudProviderModelsError}</p>
+                        ) : selectedPinnedModels.length === 0 ? (
+                          <p className="composer-cloud-note">Pick your cloud models in Settings.</p>
+                        ) : null
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </form>

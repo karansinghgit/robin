@@ -230,11 +230,11 @@ export class PlatformShell {
     this.appWindow = new BrowserWindow({
       width: 1060,
       height: 760,
-      minWidth: 860,
-      minHeight: 620,
+      minWidth: 680,
+      minHeight: 500,
       show: false,
       frame: true,
-      titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+      titleBarStyle: "default",
       title: "Robin",
       movable: true,
       fullscreenable: true,
@@ -252,6 +252,9 @@ export class PlatformShell {
         backgroundThrottling: false
       }
     });
+
+    this.appWindow.setResizable(true);
+    this.appWindow.setMaximizable(true);
 
     this.appWindow.setMenuBarVisibility(false);
     if (process.platform === "darwin") {

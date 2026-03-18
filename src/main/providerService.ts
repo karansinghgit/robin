@@ -122,7 +122,9 @@ export class ProviderService {
       if (request.mode === "search") {
         const apiKey = await this.secureConfig.getPerplexityApiKey();
         if (!apiKey) {
-          throw new Error("Add your Perplexity API key to use Search mode.");
+          throw new Error(
+            "You need to configure a model to use Robin. You either need to download a model to run locally, or bring your own key from ChatGPT / Claude / Gemini / Perplexity."
+          );
         }
         const result = await this.perplexity.streamReply({
           apiKey,

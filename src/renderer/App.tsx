@@ -210,6 +210,8 @@ function localStatusText(status: OllamaStatus | null): string {
   return "Not installed";
 }
 
+const OLLAMA_DOWNLOAD_URL = "https://ollama.com/download/";
+
 function ollamaDotClass(status: OllamaStatus | null): string {
   if (!status) return "ollama-dot ollama-dot-off";
   if (status.state === "ready") return "ollama-dot ollama-dot-ready";
@@ -522,6 +524,16 @@ export function App() {
       return;
     }
 
+    if (ollamaStatus?.state === "not_installed") {
+      setError("Ollama is not installed yet. Opening download page.");
+      try {
+        await getRobinBridge().app.openExternal(OLLAMA_DOWNLOAD_URL);
+      } catch {
+        // Ignore browser-open failures and keep UI guidance visible.
+      }
+      return;
+    }
+
     const installed = localModelSet.has(targetModel.toLowerCase());
     if (installed) {
       await applyModelSelection(modelKey("local", targetModel));
@@ -554,6 +566,15 @@ export function App() {
   async function sendPrompt() {
     if (!prompt.trim() || isStreaming) return;
     const parsed = parseModelKey(activeModelDraft);
+    if (parsed.mode === "local" && ollamaStatus?.state === "not_installed") {
+      setError("Ollama is not installed yet. Opening download page.");
+      try {
+        await getRobinBridge().app.openExternal(OLLAMA_DOWNLOAD_URL);
+      } catch {
+        // Ignore browser-open failures and keep UI guidance visible.
+      }
+      return;
+    }
     if (parsed.mode === "local" && !parsed.model) {
       setError("Select or download a local model first.");
       return;
@@ -834,7 +855,7 @@ export function App() {
 
                             <button
                               className="ghost-button"
-                              onClick={() => { void getRobinBridge().app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download"); }}
+                              onClick={() => { void getRobinBridge().app.openExternal(ollamaStatus?.downloadUrl ?? OLLAMA_DOWNLOAD_URL); }}
                             >
                               Get Ollama
                             </button>

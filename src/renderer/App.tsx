@@ -631,8 +631,6 @@ export function App() {
 
   return (
     <div className="robin-shell">
-      <div className="menu-bridge" />
-
       <div className="toolbar">
         <div className="toolbar-left">
           <button

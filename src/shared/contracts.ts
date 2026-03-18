@@ -189,6 +189,15 @@ export type ChatStreamEvent =
       messageId?: string;
     };
 
+export interface TodoItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RobinBridge {
   app: {
     togglePanel: () => Promise<void>;
@@ -213,6 +222,7 @@ export interface RobinBridge {
     listThreads: () => Promise<ThreadSummary[]>;
     loadThread: (id: string) => Promise<ConversationThread | null>;
     deleteThread: (id: string) => Promise<boolean>;
+    stopStream: (payload?: { streamId?: string; threadId?: string }) => Promise<void>;
   };
   providers: {
     getStatus: () => Promise<ProviderStatus>;
@@ -224,5 +234,12 @@ export interface RobinBridge {
     listCatalog: (limit?: number) => Promise<LocalModelCatalogItem[]>;
     pullModel: (model: string) => Promise<ModelPullResult>;
     deleteModel: (model: string) => Promise<ModelDeleteResult>;
+  };
+  todos: {
+    list: () => Promise<TodoItem[]>;
+    create: (title: string) => Promise<TodoItem>;
+    update: (id: string, changes: Partial<Pick<TodoItem, "title" | "completed" | "order">>) => Promise<TodoItem | null>;
+    reorder: (orderedIds: string[]) => Promise<TodoItem[]>;
+    delete: (id: string) => Promise<boolean>;
   };
 }

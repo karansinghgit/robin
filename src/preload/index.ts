@@ -12,6 +12,7 @@ const CHANNELS = {
   listThreads: "chat:list-threads",
   loadThread: "chat:load-thread",
   deleteThread: "chat:delete-thread",
+  stopStream: "chat:stream-stop",
   startStream: "chat:stream-start",
   streamEvent: "chat:stream-event",
   providerStatus: "providers:get-status",
@@ -20,8 +21,24 @@ const CHANNELS = {
   ollamaDetect: "ollama:detect",
   ollamaCatalog: "ollama:list-catalog",
   ollamaPull: "ollama:pull-model",
-  ollamaDelete: "ollama:delete-model"
+  ollamaDelete: "ollama:delete-model",
+  todosList: "todos:list",
+  todosCreate: "todos:create",
+  todosUpdate: "todos:update",
+  todosReorder: "todos:reorder",
+  todosDelete: "todos:delete"
 } as const;
+
+const activeStreamListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => void>();
+
+function clearStreamListener(streamId: string) {
+  const listener = activeStreamListeners.get(streamId);
+  if (!listener) {
+    return;
+  }
+  ipcRenderer.removeListener(CHANNELS.streamEvent, listener);
+  activeStreamListeners.delete(streamId);
+}
 
 const bridge: RobinBridge = {
   app: {
@@ -57,26 +74,38 @@ const bridge: RobinBridge = {
         }
         if (payload.type === "done") {
           handlers.onDone?.(payload);
-          ipcRenderer.removeListener(CHANNELS.streamEvent, listener);
+          clearStreamListener(streamId);
         }
         if (payload.type === "error") {
           handlers.onError?.(payload);
-          ipcRenderer.removeListener(CHANNELS.streamEvent, listener);
+          clearStreamListener(streamId);
         }
       };
 
       ipcRenderer.on(CHANNELS.streamEvent, listener);
+      activeStreamListeners.set(streamId, listener);
       try {
         await ipcRenderer.invoke(CHANNELS.startStream, { ...request, streamId });
       } catch (error) {
-        ipcRenderer.removeListener(CHANNELS.streamEvent, listener);
+        clearStreamListener(streamId);
         throw error;
       }
       return streamId;
     },
     listThreads: async () => ipcRenderer.invoke(CHANNELS.listThreads),
     loadThread: async (id) => ipcRenderer.invoke(CHANNELS.loadThread, id),
-    deleteThread: async (id) => ipcRenderer.invoke(CHANNELS.deleteThread, id)
+    deleteThread: async (id) => ipcRenderer.invoke(CHANNELS.deleteThread, id),
+    stopStream: async (payload) => {
+      const streamId = payload?.streamId?.trim();
+      if (streamId) {
+        clearStreamListener(streamId);
+      } else {
+        for (const activeStreamId of Array.from(activeStreamListeners.keys())) {
+          clearStreamListener(activeStreamId);
+        }
+      }
+      await ipcRenderer.invoke(CHANNELS.stopStream, payload ?? {});
+    }
   },
   providers: {
     getStatus: async () => ipcRenderer.invoke(CHANNELS.providerStatus),
@@ -88,6 +117,13 @@ const bridge: RobinBridge = {
     listCatalog: async (limit?: number) => ipcRenderer.invoke(CHANNELS.ollamaCatalog, limit),
     pullModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaPull, model),
     deleteModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaDelete, model)
+  },
+  todos: {
+    list: async () => ipcRenderer.invoke(CHANNELS.todosList),
+    create: async (title: string) => ipcRenderer.invoke(CHANNELS.todosCreate, title),
+    update: async (id: string, changes) => ipcRenderer.invoke(CHANNELS.todosUpdate, id, changes),
+    reorder: async (orderedIds: string[]) => ipcRenderer.invoke(CHANNELS.todosReorder, orderedIds),
+    delete: async (id: string) => ipcRenderer.invoke(CHANNELS.todosDelete, id)
   }
 };
 

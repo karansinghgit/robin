@@ -17,6 +17,7 @@ const IPC_CHANNELS = {
   listThreads: "chat:list-threads",
   loadThread: "chat:load-thread",
   deleteThread: "chat:delete-thread",
+  stopStream: "chat:stream-stop",
   startStream: "chat:stream-start",
   streamEvent: "chat:stream-event",
   providerStatus: "providers:get-status",
@@ -25,7 +26,12 @@ const IPC_CHANNELS = {
   ollamaDetect: "ollama:detect",
   ollamaCatalog: "ollama:list-catalog",
   ollamaPull: "ollama:pull-model",
-  ollamaDelete: "ollama:delete-model"
+  ollamaDelete: "ollama:delete-model",
+  todosList: "todos:list",
+  todosCreate: "todos:create",
+  todosUpdate: "todos:update",
+  todosReorder: "todos:reorder",
+  todosDelete: "todos:delete"
 } as const;
 
 let shell: PlatformShell;
@@ -251,6 +257,9 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle(IPC_CHANNELS.listThreads, async () => storage.listThreads());
   ipcMain.handle(IPC_CHANNELS.loadThread, async (_event, id: string) => storage.loadThread(id));
   ipcMain.handle(IPC_CHANNELS.deleteThread, async (_event, id: string) => storage.deleteThread(id));
+  ipcMain.handle(IPC_CHANNELS.stopStream, async (_event, payload?: { threadId?: string }) => {
+    await storage.finalizeStreamingMessages(payload?.threadId);
+  });
   ipcMain.handle(IPC_CHANNELS.providerStatus, async () => providerService.getStatus());
   ipcMain.handle(IPC_CHANNELS.saveConfig, async (_event, config: SaveConfigInput) => providerService.saveConfig(config));
   ipcMain.handle(IPC_CHANNELS.listCloudModels, async (_event, provider: CloudProviderId) => {
@@ -260,6 +269,12 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle(IPC_CHANNELS.ollamaCatalog, async (_event, limit?: number) => providerService.listOllamaCatalog(limit));
   ipcMain.handle(IPC_CHANNELS.ollamaPull, async (_event, model: string) => providerService.pullOllamaModel(model));
   ipcMain.handle(IPC_CHANNELS.ollamaDelete, async (_event, model: string) => providerService.deleteOllamaModel(model));
+
+  ipcMain.handle(IPC_CHANNELS.todosList, async () => storage.listTodos());
+  ipcMain.handle(IPC_CHANNELS.todosCreate, async (_event, title: string) => storage.createTodo(title));
+  ipcMain.handle(IPC_CHANNELS.todosUpdate, async (_event, id: string, changes: Partial<{ title: string; completed: boolean; order: number }>) => storage.updateTodo(id, changes));
+  ipcMain.handle(IPC_CHANNELS.todosReorder, async (_event, orderedIds: string[]) => storage.reorderTodos(orderedIds));
+  ipcMain.handle(IPC_CHANNELS.todosDelete, async (_event, id: string) => storage.deleteTodo(id));
 
   ipcMain.handle(IPC_CHANNELS.startStream, async (event, request: ChatStreamRequest) => {
     const sender = event.sender;

@@ -1,7 +1,15 @@
 import { app } from "electron";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CLOUD_PROVIDER_IDS, CloudModelCatalogItem, CloudProviderId, ConversationThread, ThreadSummary } from "../shared/contracts";
+import {
+  ChatMessage,
+  CLOUD_PROVIDER_IDS,
+  CloudModelCatalogItem,
+  CloudProviderId,
+  ConversationThread,
+  ThreadSummary,
+  TodoItem
+} from "../shared/contracts";
 
 export interface SettingsData {
   onboardingCompleted: boolean;
@@ -174,15 +182,21 @@ interface ThreadsFile {
   threads: ConversationThread[];
 }
 
+interface TodosFile {
+  todos: TodoItem[];
+}
+
 export class AppStorage {
   private readonly rootDir = path.join(app.getPath("userData"), "data");
   private readonly settingsPath = path.join(this.rootDir, "settings.json");
   private readonly threadsPath = path.join(this.rootDir, "threads.json");
+  private readonly todosPath = path.join(this.rootDir, "todos.json");
 
   async init(): Promise<void> {
     await mkdir(this.rootDir, { recursive: true });
     await this.ensureFile(this.settingsPath, DEFAULT_SETTINGS);
     await this.ensureFile<ThreadsFile>(this.threadsPath, { threads: [] });
+    await this.ensureFile<TodosFile>(this.todosPath, { todos: [] });
   }
 
   async getSettings(): Promise<SettingsData> {
@@ -246,6 +260,117 @@ export class AppStorage {
       return false;
     }
     await this.writeJson(this.threadsPath, { threads: nextThreads });
+    return true;
+  }
+
+  async finalizeStreamingMessages(threadId?: string): Promise<void> {
+    const threads = await this.getThreads();
+    let changed = false;
+    const now = new Date().toISOString();
+
+    const nextThreads = threads.map((thread) => {
+      if (threadId && thread.id !== threadId) {
+        return thread;
+      }
+
+      let threadChanged = false;
+      const nextMessages: ChatMessage[] = [];
+
+      for (const message of thread.messages) {
+        if (message.status !== "streaming") {
+          nextMessages.push(message);
+          continue;
+        }
+
+        threadChanged = true;
+        changed = true;
+        const emptyAssistant =
+          message.role === "assistant"
+          && message.content.trim().length === 0
+          && (message.attachments?.length ?? 0) === 0;
+
+        if (emptyAssistant) {
+          continue;
+        }
+
+        nextMessages.push({
+          ...message,
+          status: "complete"
+        });
+      }
+
+      if (!threadChanged) {
+        return thread;
+      }
+
+      return {
+        ...thread,
+        updatedAt: now,
+        messages: nextMessages
+      };
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    await this.writeJson(this.threadsPath, { threads: nextThreads });
+  }
+
+  async listTodos(): Promise<TodoItem[]> {
+    const file = await this.readJson<TodosFile>(this.todosPath, { todos: [] });
+    return file.todos.slice().sort((a, b) => a.order - b.order);
+  }
+
+  async createTodo(title: string): Promise<TodoItem> {
+    const file = await this.readJson<TodosFile>(this.todosPath, { todos: [] });
+    const maxOrder = file.todos.reduce((max, t) => Math.max(max, t.order), -1);
+    const now = new Date().toISOString();
+    const todo: TodoItem = {
+      id: crypto.randomUUID(),
+      title,
+      completed: false,
+      order: maxOrder + 1,
+      createdAt: now,
+      updatedAt: now
+    };
+    file.todos.push(todo);
+    await this.writeJson(this.todosPath, file);
+    return todo;
+  }
+
+  async updateTodo(id: string, changes: Partial<Pick<TodoItem, "title" | "completed" | "order">>): Promise<TodoItem | null> {
+    const file = await this.readJson<TodosFile>(this.todosPath, { todos: [] });
+    const todo = file.todos.find((t) => t.id === id);
+    if (!todo) return null;
+    if (changes.title !== undefined) todo.title = changes.title;
+    if (changes.completed !== undefined) todo.completed = changes.completed;
+    if (changes.order !== undefined) todo.order = changes.order;
+    todo.updatedAt = new Date().toISOString();
+    await this.writeJson(this.todosPath, file);
+    return todo;
+  }
+
+  async reorderTodos(orderedIds: string[]): Promise<TodoItem[]> {
+    const file = await this.readJson<TodosFile>(this.todosPath, { todos: [] });
+    const idToTodo = new Map(file.todos.map((t) => [t.id, t]));
+    const now = new Date().toISOString();
+    for (let i = 0; i < orderedIds.length; i++) {
+      const todo = idToTodo.get(orderedIds[i]);
+      if (todo) {
+        todo.order = i;
+        todo.updatedAt = now;
+      }
+    }
+    await this.writeJson(this.todosPath, file);
+    return file.todos.slice().sort((a, b) => a.order - b.order);
+  }
+
+  async deleteTodo(id: string): Promise<boolean> {
+    const file = await this.readJson<TodosFile>(this.todosPath, { todos: [] });
+    const nextTodos = file.todos.filter((t) => t.id !== id);
+    if (nextTodos.length === file.todos.length) return false;
+    await this.writeJson(this.todosPath, { todos: nextTodos });
     return true;
   }
 

@@ -75,10 +75,11 @@ If the panel disappears after clicking away, open it again from the `Robin` menu
 
 ### Icon assets
 
-Replace icon files in [src/renderer/assets/icons](/Users/karansingh/projects/robin/src/renderer/assets/icons):
+Replace brand files in [assets](/Users/karansingh/projects/robin/assets):
 
-- [brand-logo.svg](/Users/karansingh/projects/robin/src/renderer/assets/icons/brand-logo.svg) for the top `Robin` brand button.
-- [sidebar-dashboard.svg](/Users/karansingh/projects/robin/src/renderer/assets/icons/sidebar-dashboard.svg) for the left sidebar toggle icon.
+- [image.png](/Users/karansingh/projects/robin/assets/image.png) for the top `Robin` brand button.
+
+UI action icons now come from Hugeicons (`@hugeicons/react` + `@hugeicons/core-free-icons`).
 
 Node is pinned in [.nvmrc](/Users/karansingh/projects/robin/.nvmrc) and [.node-version](/Users/karansingh/projects/robin/.node-version).
 After bootstrap, the repo-level wrappers [scripts/nodew](/Users/karansingh/projects/robin/scripts/nodew) and [scripts/npmw](/Users/karansingh/projects/robin/scripts/npmw) will use the local runtime automatically.

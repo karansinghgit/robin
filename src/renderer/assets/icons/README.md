@@ -1,10 +1,8 @@
 # Icon Assets
 
-Put renderer icon files in this folder.
+Toolbar action icons are now provided by Hugeicons:
 
-- Brand logo used in the top center button:
-  - `brand-logo.svg`
-- Left sidebar toggle icon:
-  - `sidebar-dashboard.svg`
+- `@hugeicons/react`
+- `@hugeicons/core-free-icons`
 
-You can replace these files with your own assets using the same file names and dimensions.
+Brand logo source is `/assets/image.png` at repo root.

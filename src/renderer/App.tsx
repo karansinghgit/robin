@@ -1,7 +1,9 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { HugeiconsIcon, IconSvgElement } from "@hugeicons/react";
 import { AssistantMode, ConversationThread, OllamaStatus, ProviderStatus, SaveConfigInput, ThreadSummary } from "../shared/contracts";
-import brandLogoIcon from "./assets/icons/brand-logo.svg";
-import sidebarDashboardIcon from "./assets/icons/sidebar-dashboard.svg";
+import brandLogoIcon from "../../assets/image.png";
+
+const { Add01Icon, DashboardSquare01Icon, SentIcon, Settings02Icon } = require("@hugeicons/core-free-icons") as Record<string, IconSvgElement>;
 
 const WEB_MODEL_CANDIDATES = [
   "sonar",
@@ -15,28 +17,43 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function IconSettings() {
+function RobinIconGlyph({
+  icon,
+  size = 17,
+  strokeWidth = 1.8,
+  className
+}: {
+  icon: IconSvgElement;
+  size?: number;
+  strokeWidth?: number;
+  className?: string;
+}) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M6.5 1h3l.3 1.5c.4.1.7.3 1 .5l1.4-.8 2.1 2.1-.8 1.4c.2.3.4.6.5 1L15.5 7v3l-1.5.3c-.1.4-.3.7-.5 1l.8 1.4-2.1 2.1-1.4-.8c-.3.2-.6.4-1 .5L9.5 15h-3l-.3-1.5c-.4-.1-.7-.3-1-.5l-1.4.8-2.1-2.1.8-1.4c-.2-.3-.4-.6-.5-1L.5 10V7l1.5-.3c.1-.4.3-.7.5-1L1.7 4.3l2.1-2.1 1.4.8c.3-.2.6-.4 1-.5L6.5 1zM8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" />
-    </svg>
+    <HugeiconsIcon
+      icon={icon}
+      size={size}
+      color="currentColor"
+      strokeWidth={strokeWidth}
+      className={className}
+      aria-hidden="true"
+    />
   );
+}
+
+function IconSettings() {
+  return <RobinIconGlyph icon={Settings02Icon as IconSvgElement} />;
+}
+
+function IconSidebar() {
+  return <RobinIconGlyph icon={DashboardSquare01Icon as IconSvgElement} size={16} />;
 }
 
 function IconPlus() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-    </svg>
-  );
+  return <RobinIconGlyph icon={Add01Icon as IconSvgElement} />;
 }
 
 function IconSend() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2.5 8L13 3 8 13.5 7 9 2.5 8z" />
-    </svg>
-  );
+  return <RobinIconGlyph icon={SentIcon as IconSvgElement} size={14} strokeWidth={2} />;
 }
 
 /* ── Helpers ────────────────────────────────────── */
@@ -344,7 +361,7 @@ export function App() {
             aria-label={sidebarOpen ? "Hide chats" : "Show chats"}
             onClick={() => setSidebarOpen((current) => !current)}
           >
-            <img className="tool-icon-img" src={sidebarDashboardIcon} alt="" aria-hidden="true" />
+            <IconSidebar />
           </button>
         </div>
 

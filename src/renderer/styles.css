@@ -114,23 +114,13 @@ button:focus-visible {
 .tool-btn svg {
   width: 17px;
   height: 17px;
-  fill: currentColor;
-}
-
-.tool-icon-img {
-  width: 16px;
-  height: 16px;
-  display: block;
-  object-fit: contain;
+  color: currentColor;
 }
 
 .tool-btn:hover {
   color: var(--warm-hover);
   opacity: 1;
   filter: drop-shadow(0 0 8px var(--warm-glow));
-}
-.tool-btn:hover .tool-icon-img {
-  filter: drop-shadow(0 0 6px var(--warm-glow));
 }
 .tool-btn:focus,
 .tool-btn:focus-visible {

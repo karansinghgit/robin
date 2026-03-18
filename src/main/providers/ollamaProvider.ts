@@ -83,6 +83,15 @@ function formatReachabilityError(baseUrl: string): string {
   return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Open Ollama (or run 'ollama serve') and try again.`;
 }
 
+function resolveSelectedModel(selectedModel: string | undefined, models: string[]): string | undefined {
+  if (!selectedModel) {
+    return models[0];
+  }
+  const normalized = selectedModel.trim().toLowerCase();
+  const matched = models.find((model) => model.trim().toLowerCase() === normalized);
+  return matched ?? models[0];
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -121,7 +130,7 @@ export class OllamaProvider {
           state: models.length > 0 ? "ready" : "no_model",
           baseUrl: candidate,
           models,
-          selectedModel: selectedModel || models[0],
+          selectedModel: resolveSelectedModel(selectedModel, models),
           version,
           downloadUrl: OLLAMA_DOWNLOAD_URL
         };
@@ -148,7 +157,7 @@ export class OllamaProvider {
           state: models.length > 0 ? "ready" : "no_model",
           baseUrl: candidate,
           models,
-          selectedModel: selectedModel || models[0],
+          selectedModel: resolveSelectedModel(selectedModel, models),
           version,
           downloadUrl: OLLAMA_DOWNLOAD_URL
         };

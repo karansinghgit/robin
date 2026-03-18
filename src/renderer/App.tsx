@@ -267,10 +267,12 @@ export function App() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [pullingModel, setPullingModel] = useState<string | null>(null);
+  const [localModelNotice, setLocalModelNotice] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messages = activeThread?.messages ?? [];
 
   useEffect(() => {
@@ -428,6 +430,13 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [screen, sidebarOpen]);
 
+  useEffect(() => () => {
+    if (streamWatchdogRef.current) {
+      clearTimeout(streamWatchdogRef.current);
+      streamWatchdogRef.current = null;
+    }
+  }, []);
+
   async function persistConfig(patch: SaveConfigInput) {
     try {
       setError(null);
@@ -463,6 +472,10 @@ export function App() {
 
   async function applyModelSelection(nextModelKey: string) {
     const next = parseModelKey(nextModelKey);
+    if (next.mode === "local" && next.model && !localModelSet.has(next.model.toLowerCase())) {
+      setError(`${next.model} is not downloaded yet. Download it first, then activate.`);
+      return;
+    }
     setActiveModelDraft(nextModelKey);
     if (next.mode === "search") {
       await persistConfig({
@@ -523,6 +536,7 @@ export function App() {
     if (!targetModel) {
       return;
     }
+    setLocalModelNotice(null);
 
     if (ollamaStatus?.state === "not_installed") {
       setError("Ollama is not installed yet. Opening download page.");
@@ -544,6 +558,15 @@ export function App() {
       setError(null);
       setPullingModel(targetModel);
       await getRobinBridge().ollama.pullModel(targetModel);
+      const robin = getRobinBridge();
+      const nextOllamaStatus = await robin.ollama.detect();
+      setOllamaStatus(nextOllamaStatus);
+
+      if (!nextOllamaStatus.models.some((modelName) => modelName.toLowerCase() === targetModel.toLowerCase())) {
+        throw new Error(`Download for ${targetModel} is not complete yet. Please retry in a moment.`);
+      }
+
+      setLocalModelNotice(`${targetModel} downloaded and ready.`);
       await refreshStatus();
       await applyModelSelection(modelKey("local", targetModel));
     } catch (pullError) {
@@ -580,6 +603,13 @@ export function App() {
       return;
     }
     setError(null);
+    if (streamWatchdogRef.current) {
+      clearTimeout(streamWatchdogRef.current);
+    }
+    streamWatchdogRef.current = setTimeout(() => {
+      setIsStreaming(false);
+      setError("Model response timed out. Try again or switch model.");
+    }, 30000);
     setIsStreaming(true);
     const text = prompt.trim();
     setPrompt("");
@@ -615,11 +645,19 @@ export function App() {
           },
           onDone: ({ thread }) => {
             setIsStreaming(false);
+            if (streamWatchdogRef.current) {
+              clearTimeout(streamWatchdogRef.current);
+              streamWatchdogRef.current = null;
+            }
             setActiveThread({ ...thread });
             void refreshThreads(thread.id);
           },
           onError: ({ message }) => {
             setIsStreaming(false);
+            if (streamWatchdogRef.current) {
+              clearTimeout(streamWatchdogRef.current);
+              streamWatchdogRef.current = null;
+            }
             setError(message);
             void refreshThreads(activeThread?.id);
           }
@@ -627,6 +665,10 @@ export function App() {
       );
     } catch (streamError) {
       setIsStreaming(false);
+      if (streamWatchdogRef.current) {
+        clearTimeout(streamWatchdogRef.current);
+        streamWatchdogRef.current = null;
+      }
       setPrompt(text);
       setError(errorMessage(streamError, "Could not start chat. Please retry."));
     }
@@ -852,6 +894,9 @@ export function App() {
                                 No local models installed yet.
                               </p>
                             )}
+                            {localModelNotice ? (
+                              <p className="setting-note setting-note-success">{localModelNotice}</p>
+                            ) : null}
 
                             <button
                               className="ghost-button"

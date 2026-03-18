@@ -234,9 +234,17 @@ export class ProviderService {
         if (ollamaStatus.state === "no_model" || !ollamaStatus.selectedModel) {
           throw new Error("Download an Ollama model before using Local mode.");
         }
+        const preferredLocalModel = providers.ollama.model?.trim();
+        const resolvedLocalModel = preferredLocalModel && ollamaStatus.models.includes(preferredLocalModel)
+          ? preferredLocalModel
+          : ollamaStatus.selectedModel;
+
+        if (!resolvedLocalModel) {
+          throw new Error("Download an Ollama model before using Local mode.");
+        }
         const result = await this.ollama.streamReply({
           baseUrl: providers.ollama.baseUrl,
-          model: providers.ollama.model || ollamaStatus.selectedModel,
+          model: resolvedLocalModel,
           messages: thread.messages.filter((message) => message.id !== assistantMessage.id),
           onDelta: (delta) => {
             assistantMessage.content += delta;

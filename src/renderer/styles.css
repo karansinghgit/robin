@@ -769,6 +769,7 @@ button:focus-visible {
 }
 
 .setting-note-tight { margin-bottom: 6px; }
+.setting-note-success { color: var(--green); margin-top: 2px; }
 
 .field-label {
   display: block;

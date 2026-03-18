@@ -854,7 +854,6 @@ export function App() {
                                             <div className="catalog-item-head">
                                               <div className="catalog-item-main">
                                                 <p className="catalog-item-title">{item.title}</p>
-                                                <p className="catalog-item-model">{item.model}</p>
                                               </div>
                                               <button
                                                 className="inline-action-button catalog-action-button"
@@ -864,10 +863,12 @@ export function App() {
                                                 {busy ? "Downloading..." : installed ? "Use" : "Download"}
                                               </button>
                                             </div>
-                                            <p className="catalog-item-description">{item.description}</p>
                                             <p className="catalog-item-metrics">
+                                              <span className="catalog-item-model">{item.model}</span>
                                               <span className={`ram-fit ram-fit-${fit.tone}`}>{fit.label}</span>
-                                              {item.sizeLabel.toUpperCase()} • {formatModelFootprint(item.estimatedSizeMb)} • ~{item.minRamGb} GB RAM • {item.pulls} pulls
+                                              <span>{formatModelFootprint(item.estimatedSizeMb)}</span>
+                                              <span>~{item.minRamGb} GB RAM</span>
+                                              <span>{item.pulls} pulls</span>
                                             </p>
                                           </article>
                                         );

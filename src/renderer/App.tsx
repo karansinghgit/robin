@@ -1,7 +1,17 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon, IconSvgElement } from "@hugeicons/react";
-import { AssistantMode, ConversationThread, OllamaStatus, ProviderStatus, SaveConfigInput, ThreadSummary } from "../shared/contracts";
-import brandLogoIcon from "../../assets/image.png";
+import {
+  AssistantMode,
+  CLOUD_PROVIDER_IDS,
+  CloudProviderId,
+  ConversationThread,
+  LocalModelCatalogItem,
+  OllamaStatus,
+  ProviderStatus,
+  SaveConfigInput,
+  ThreadSummary
+} from "../shared/contracts";
+import providerPlaceholderLogo from "./assets/provider-logos/placeholder.svg";
 
 const FALLBACK_ADD01_ICON: IconSvgElement = [
   ["path", { d: "M12.001 5.00003V19.002", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "0" }],
@@ -24,16 +34,91 @@ const Add01Icon = FALLBACK_ADD01_ICON;
 const DashboardSquare01Icon = FALLBACK_DASHBOARD_ICON;
 const Settings02Icon = FALLBACK_SETTINGS_ICON;
 
-const WEB_MODEL_CANDIDATES = [
-  "sonar",
-  "sonar-pro",
-  "sonar-reasoning",
-  "sonar-reasoning-pro",
-  "r1-1776",
+interface CloudProviderMeta {
+  id: CloudProviderId;
+  label: string;
+  keyPlaceholder: string;
+}
+
+const CLOUD_PROVIDERS: CloudProviderMeta[] = [
+  { id: "openai", label: "ChatGPT (OpenAI)", keyPlaceholder: "sk-proj-..." },
+  { id: "anthropic", label: "Claude (Anthropic)", keyPlaceholder: "sk-ant-..." },
+  { id: "google", label: "Gemini (Google)", keyPlaceholder: "AIza..." },
+  { id: "perplexity", label: "Perplexity", keyPlaceholder: "pplx-..." },
+  { id: "openrouter", label: "OpenRouter", keyPlaceholder: "sk-or-..." }
 ];
+
+type SettingsModeTab = "cloud" | "local";
+
+type SettingsSectionId = "models" | "shortcut";
+
+const SHORTCUT_PRESETS = [
+  { label: "Cmd/Ctrl + Shift + Space", value: "CommandOrControl+Shift+Space" },
+  { label: "Cmd/Ctrl + Shift + K", value: "CommandOrControl+Shift+K" },
+  { label: "Cmd/Ctrl + Space", value: "CommandOrControl+Space" },
+  { label: "Cmd/Ctrl + Option + Space", value: "CommandOrControl+Alt+Space" }
+] as const;
+
+const CATALOG_PROVIDER_GROUP_ORDER = [
+  "Meta",
+  "Alibaba (Qwen)",
+  "Google",
+  "Mistral",
+  "DeepSeek",
+  "Microsoft",
+  "Cohere",
+  "IBM",
+  "Community"
+] as const;
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function buildProviderDrafts(): Record<CloudProviderId, string> {
+  return CLOUD_PROVIDER_IDS.reduce((result, id) => {
+    result[id] = "";
+    return result;
+  }, {} as Record<CloudProviderId, string>);
+}
+
+function formatModelFootprint(sizeMb: number): string {
+  if (sizeMb >= 1024) {
+    const gb = sizeMb / 1024;
+    return `${gb >= 10 ? gb.toFixed(0) : gb.toFixed(1)} GB`;
+  }
+  return `${sizeMb} MB`;
+}
+
+function ramFitTier(minRamGb: number, systemMemoryGb?: number): { label: string; tone: "good" | "maybe" | "bad" } {
+  if (!systemMemoryGb || systemMemoryGb <= 0) {
+    return { label: "Maybe", tone: "maybe" };
+  }
+
+  const recommendedLimit = systemMemoryGb * 0.62;
+  const maybeLimit = systemMemoryGb * 0.9;
+
+  if (minRamGb <= recommendedLimit) {
+    return { label: "Recommended", tone: "good" };
+  }
+  if (minRamGb <= maybeLimit) {
+    return { label: "Maybe", tone: "maybe" };
+  }
+  return { label: "Not recommended", tone: "bad" };
+}
+
+function inferCatalogProviderCategory(item: LocalModelCatalogItem): string {
+  const haystack = `${item.title} ${item.model}`.toLowerCase();
+
+  if (/(\bllama\b|\bmeta\b|codellama)/i.test(haystack)) return "Meta";
+  if (/\bqwen\b/i.test(haystack)) return "Alibaba (Qwen)";
+  if (/\bgemma\b/i.test(haystack)) return "Google";
+  if (/\bmistral\b|\bmixtral\b|\bcodestral\b/i.test(haystack)) return "Mistral";
+  if (/\bdeepseek\b/i.test(haystack)) return "DeepSeek";
+  if (/\bphi\b/i.test(haystack)) return "Microsoft";
+  if (/\bcohere\b|\bcommand-r\b/i.test(haystack)) return "Cohere";
+  if (/\bgranite\b|\bibm\b/i.test(haystack)) return "IBM";
+  return "Community";
 }
 
 function RobinIconGlyph({
@@ -84,7 +169,13 @@ function IconSend() {
   );
 }
 
-/* ── Helpers ────────────────────────────────────── */
+function IconChevron() {
+  return (
+    <svg viewBox="0 0 12 8" aria-hidden="true" focusable="false">
+      <path d="M1.5 1.5L6 6L10.5 1.5" />
+    </svg>
+  );
+}
 
 function modelKey(mode: AssistantMode, model: string): string {
   return `${mode}:${model}`;
@@ -108,38 +199,44 @@ function safeCitationHost(rawUrl: string): string {
   }
 }
 
-function localStatusText(s: OllamaStatus | null): string {
-  if (!s) return "Checking";
-  if (s.state === "ready") return s.version ? `Ollama ${s.version}` : "Running";
-  if (s.state === "no_model") return "No models pulled";
-  if (s.state === "not_running") return "Not running";
+function localStatusText(status: OllamaStatus | null): string {
+  if (!status) return "Checking";
+  if (status.state === "ready") return status.version ? `Ollama ${status.version}` : "Running";
+  if (status.state === "no_model") return "No models pulled";
+  if (status.state === "not_running") return "Not running";
   return "Not installed";
 }
 
-function ollamaDotClass(s: OllamaStatus | null): string {
-  if (!s) return "ollama-dot ollama-dot-off";
-  if (s.state === "ready") return "ollama-dot ollama-dot-ready";
-  if (s.state === "no_model" || s.state === "not_running") return "ollama-dot ollama-dot-warning";
+function ollamaDotClass(status: OllamaStatus | null): string {
+  if (!status) return "ollama-dot ollama-dot-off";
+  if (status.state === "ready") return "ollama-dot ollama-dot-ready";
+  if (status.state === "no_model" || status.state === "not_running") return "ollama-dot ollama-dot-warning";
   return "ollama-dot ollama-dot-off";
 }
-
-/* ── App ────────────────────────────────────────── */
 
 export function App() {
   const [profileName, setProfileName] = useState("there");
   const [screen, setScreen] = useState<"chat" | "settings">("chat");
+  const [settingsMode, setSettingsMode] = useState<SettingsModeTab>("cloud");
+  const [settingsSections, setSettingsSections] = useState<Record<SettingsSectionId, boolean>>({
+    models: true,
+    shortcut: false
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeThread, setActiveThread] = useState<ConversationThread | null>(null);
   const [prompt, setPrompt] = useState("");
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [shortcutDraft, setShortcutDraft] = useState("CommandOrControl+Shift+Space");
   const [activeModelDraft, setActiveModelDraft] = useState(modelKey("search", "sonar"));
-  const [customModelDraft, setCustomModelDraft] = useState("");
+  const [providerKeyDrafts, setProviderKeyDrafts] = useState<Record<CloudProviderId, string>>(() => buildProviderDrafts());
+  const [customLocalModelDraft, setCustomLocalModelDraft] = useState("");
+  const [localCatalog, setLocalCatalog] = useState<LocalModelCatalogItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [pullingModel, setPullingModel] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -149,35 +246,93 @@ export function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, messages[messages.length - 1]?.content]);
 
-  const modelOptions = useMemo(() => {
-    const opts = new Map<string, string>();
-    const curPplx = status?.perplexity.model || "sonar";
-    const curLocal = status?.ollama.selectedModel || "";
-    for (const m of WEB_MODEL_CANDIDATES) opts.set(modelKey("search", m), m);
-    opts.set(modelKey("search", curPplx), curPplx);
-    for (const m of ollamaStatus?.models ?? []) opts.set(modelKey("local", m), m);
-    if (curLocal) opts.set(modelKey("local", curLocal), curLocal);
-    return Array.from(opts.entries()).map(([value, label]) => ({ value, label }));
-  }, [status?.perplexity.model, status?.ollama.selectedModel, ollamaStatus?.models]);
+  const localModels = ollamaStatus?.models ?? [];
+  const localModelSet = useMemo(() => new Set(localModels.map((model) => model.toLowerCase())), [localModels]);
+  const displayName = profileName.toLowerCase().startsWith("karan") ? "Karan" : profileName;
+
+  const catalogForDisplay = useMemo(() => {
+    if (localCatalog.length === 0) {
+      return [];
+    }
+
+    const memoryBudget = (status?.systemMemoryGb ?? 0) * 0.85;
+    if (!memoryBudget) {
+      return localCatalog;
+    }
+
+    const recommended = localCatalog.filter((item) => item.minRamGb <= memoryBudget);
+    const fallback = localCatalog.filter((item) => item.minRamGb > memoryBudget);
+    return [...recommended, ...fallback];
+  }, [localCatalog, status?.systemMemoryGb]);
+
+  const groupedCatalogForDisplay = useMemo(() => {
+    const bucket = new Map<string, LocalModelCatalogItem[]>();
+    for (const item of catalogForDisplay) {
+      const category = inferCatalogProviderCategory(item);
+      const existing = bucket.get(category);
+      if (existing) {
+        existing.push(item);
+      } else {
+        bucket.set(category, [item]);
+      }
+    }
+
+    const order = new Map<string, number>();
+    for (const [index, category] of CATALOG_PROVIDER_GROUP_ORDER.entries()) {
+      order.set(category, index);
+    }
+
+    return Array.from(bucket.entries())
+      .sort(([left], [right]) => {
+        const leftOrder = order.get(left) ?? Number.MAX_SAFE_INTEGER;
+        const rightOrder = order.get(right) ?? Number.MAX_SAFE_INTEGER;
+        if (leftOrder !== rightOrder) {
+          return leftOrder - rightOrder;
+        }
+        return left.localeCompare(right);
+      })
+      .map(([category, items]) => ({ category, items }));
+  }, [catalogForDisplay]);
 
   async function refreshThreads(selectedId?: string) {
     const list = await window.robin.chat.listThreads();
     setThreads(list);
     const id = selectedId ?? activeThread?.id ?? list[0]?.id;
-    if (!id) { setActiveThread(null); return; }
+    if (!id) {
+      setActiveThread(null);
+      return;
+    }
     setActiveThread(await window.robin.chat.loadThread(id));
   }
 
   async function refreshStatus() {
-    const [s, o] = await Promise.all([window.robin.providers.getStatus(), window.robin.ollama.detect()]);
-    setStatus(s);
-    setOllamaStatus(o);
-    setShortcutDraft(s.shortcut);
+    const [nextStatus, nextOllamaStatus] = await Promise.all([window.robin.providers.getStatus(), window.robin.ollama.detect()]);
+    setStatus(nextStatus);
+    setOllamaStatus(nextOllamaStatus);
+    setShortcutDraft(nextStatus.shortcut);
+    setSettingsMode(nextStatus.preferredMode === "local" ? "local" : "cloud");
     setActiveModelDraft(
-      s.preferredMode === "local"
-        ? modelKey("local", s.ollama.selectedModel || o.selectedModel || "")
-        : modelKey("search", s.perplexity.model)
+      nextStatus.preferredMode === "local"
+        ? modelKey("local", nextStatus.ollama.selectedModel || nextOllamaStatus.selectedModel || "")
+        : modelKey("search", nextStatus.perplexity.model)
     );
+  }
+
+  async function loadLocalCatalog(force = false) {
+    if (catalogLoading && !force) {
+      return;
+    }
+
+    try {
+      setCatalogLoading(true);
+      setCatalogError(null);
+      const models = await window.robin.ollama.listCatalog(100);
+      setLocalCatalog(models);
+    } catch (catalogFetchError) {
+      setCatalogError(catalogFetchError instanceof Error ? catalogFetchError.message : "Could not load local model catalog.");
+    } finally {
+      setCatalogLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -197,9 +352,9 @@ export function App() {
 
       try {
         await Promise.all([refreshStatus(), refreshThreads()]);
-      } catch (e) {
+      } catch (loadError) {
         if (isActive) {
-          setError(e instanceof Error ? e.message : "Could not load Robin state.");
+          setError(loadError instanceof Error ? loadError.message : "Could not load Robin state.");
         }
       }
     })();
@@ -210,10 +365,23 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (sidebarOpen) { setSidebarOpen(false); return; }
-        if (screen === "settings") { setScreen("chat"); return; }
+    if (screen !== "settings" || settingsMode !== "local" || localCatalog.length > 0) {
+      return;
+    }
+    void loadLocalCatalog();
+  }, [screen, settingsMode, localCatalog.length]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (sidebarOpen) {
+          setSidebarOpen(false);
+          return;
+        }
+        if (screen === "settings") {
+          setScreen("chat");
+          return;
+        }
         void window.robin.app.togglePanel();
       }
     };
@@ -221,39 +389,139 @@ export function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [screen, sidebarOpen]);
 
-  async function handleSave() {
-    setIsSaving(true);
-    setError(null);
+  async function persistConfig(patch: SaveConfigInput) {
     try {
-      const shortRes = await window.robin.app.setShortcut(shortcutDraft.trim());
-      const parsed = parseModelKey(activeModelDraft);
-      const model = customModelDraft.trim() || parsed.model;
-      const payload: SaveConfigInput = {
+      setError(null);
+      await window.robin.providers.saveConfig({
         onboardingCompleted: true,
-        preferredMode: parsed.mode,
-        shortcut: shortRes.shortcut,
-      };
-      if (parsed.mode === "search") payload.perplexityModel = model || status?.perplexity.model;
-      else payload.ollamaModel = model || ollamaStatus?.selectedModel || undefined;
-      if (apiKeyDraft.trim()) payload.perplexityApiKey = apiKeyDraft.trim();
-      await window.robin.providers.saveConfig(payload);
-      setApiKeyDraft("");
-      setCustomModelDraft("");
-      setScreen("chat");
-      if (!shortRes.success) setError("Shortcut in use.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
-    } finally {
-      setIsSaving(false);
+        ...patch
+      });
       await refreshStatus();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save settings.");
     }
+  }
+
+  async function setPreferredMode(next: SettingsModeTab) {
+    setSettingsMode(next);
+    if (next === "cloud") {
+      const nextCloudModel = status?.perplexity.model || "sonar";
+      setActiveModelDraft(modelKey("search", nextCloudModel));
+      await persistConfig({
+        preferredMode: "search",
+        perplexityModel: nextCloudModel
+      });
+      return;
+    }
+
+    const nextLocalModel = status?.ollama.selectedModel || ollamaStatus?.selectedModel || "";
+    setActiveModelDraft(modelKey("local", nextLocalModel));
+    await persistConfig({
+      preferredMode: "local",
+      ollamaModel: nextLocalModel
+    });
+  }
+
+  async function applyModelSelection(nextModelKey: string) {
+    const next = parseModelKey(nextModelKey);
+    setActiveModelDraft(nextModelKey);
+    if (next.mode === "search") {
+      await persistConfig({
+        preferredMode: "search",
+        perplexityModel: next.model || status?.perplexity.model || "sonar"
+      });
+      return;
+    }
+    await persistConfig({
+      preferredMode: "local",
+      ollamaModel: next.model || ollamaStatus?.selectedModel || ""
+    });
+  }
+
+  async function saveProviderKey(providerId: CloudProviderId) {
+    const candidate = providerKeyDrafts[providerId].trim();
+    if (!candidate) {
+      return;
+    }
+    await persistConfig({
+      providerApiKeys: {
+        [providerId]: candidate
+      }
+    });
+    setProviderKeyDrafts((current) => ({
+      ...current,
+      [providerId]: ""
+    }));
+  }
+
+  async function saveShortcutDraft(nextShortcut?: string) {
+    const shortcut = (nextShortcut ?? shortcutDraft).trim();
+    if (!shortcut) {
+      setShortcutDraft(status?.shortcut || "CommandOrControl+Shift+Space");
+      return;
+    }
+    try {
+      setError(null);
+      const result = await window.robin.app.setShortcut(shortcut);
+      setShortcutDraft(result.shortcut);
+      if (!result.success) {
+        setError("Shortcut in use.");
+      }
+    } catch (shortcutError) {
+      setError(shortcutError instanceof Error ? shortcutError.message : "Could not set shortcut.");
+    }
+  }
+
+  function toggleSettingsSection(sectionId: SettingsSectionId) {
+    setSettingsSections((current) => ({
+      ...current,
+      [sectionId]: !current[sectionId]
+    }));
+  }
+
+  async function useOrPullLocalModel(model: string) {
+    const targetModel = model.trim();
+    if (!targetModel) {
+      return;
+    }
+
+    const installed = localModelSet.has(targetModel.toLowerCase());
+    if (installed) {
+      await applyModelSelection(modelKey("local", targetModel));
+      return;
+    }
+
+    try {
+      setError(null);
+      setPullingModel(targetModel);
+      await window.robin.ollama.pullModel(targetModel);
+      await refreshStatus();
+      await applyModelSelection(modelKey("local", targetModel));
+    } catch (pullError) {
+      setError(pullError instanceof Error ? pullError.message : `Could not download ${targetModel}.`);
+    } finally {
+      setPullingModel(null);
+    }
+  }
+
+  async function handleCustomLocalModelSubmit(event: FormEvent) {
+    event.preventDefault();
+    const candidate = customLocalModelDraft.trim();
+    if (!candidate || pullingModel) {
+      return;
+    }
+    await useOrPullLocalModel(candidate);
+    setCustomLocalModelDraft("");
   }
 
   async function handleSend(event: FormEvent) {
     event.preventDefault();
     if (!prompt.trim() || isStreaming) return;
     const parsed = parseModelKey(activeModelDraft);
-    if (parsed.mode === "local" && !parsed.model) { setError("Select a local model first."); return; }
+    if (parsed.mode === "local" && !parsed.model) {
+      setError("Select or download a local model first.");
+      return;
+    }
     setError(null);
     setIsStreaming(true);
     const text = prompt.trim();
@@ -261,15 +529,42 @@ export function App() {
     await window.robin.chat.streamReply(
       { conversationId: activeThread?.id, mode: parsed.mode, prompt: text },
       {
-        onThread: ({ thread }) => { setActiveThread({ ...thread }); void refreshThreads(thread.id); },
+        onThread: ({ thread }) => {
+          setActiveThread({ ...thread });
+          void refreshThreads(thread.id);
+        },
         onDelta: ({ messageId, delta }) => {
-          setActiveThread((c) => c ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, content: m.content + delta, status: "streaming" } : m) } : c);
+          setActiveThread((current) => current
+            ? {
+                ...current,
+                messages: current.messages.map((message) => (
+                  message.id === messageId
+                    ? { ...message, content: message.content + delta, status: "streaming" }
+                    : message
+                ))
+              }
+            : current);
         },
         onCitations: ({ messageId, citations }) => {
-          setActiveThread((c) => c ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, citations } : m) } : c);
+          setActiveThread((current) => current
+            ? {
+                ...current,
+                messages: current.messages.map((message) => (
+                  message.id === messageId ? { ...message, citations } : message
+                ))
+              }
+            : current);
         },
-        onDone: ({ thread }) => { setIsStreaming(false); setActiveThread({ ...thread }); void refreshThreads(thread.id); },
-        onError: ({ message }) => { setIsStreaming(false); setError(message); void refreshThreads(activeThread?.id); },
+        onDone: ({ thread }) => {
+          setIsStreaming(false);
+          setActiveThread({ ...thread });
+          void refreshThreads(thread.id);
+        },
+        onError: ({ message }) => {
+          setIsStreaming(false);
+          setError(message);
+          void refreshThreads(activeThread?.id);
+        }
       }
     );
   }
@@ -277,105 +572,15 @@ export function App() {
   function startNewChat() {
     setActiveThread(null);
     setError(null);
-  }
-
-  function handleBrandClick() {
-    setSidebarOpen(false);
-    startNewChat();
+    setScreen("chat");
   }
 
   function selectThread(id: string) {
+    setScreen("chat");
     void refreshThreads(id);
   }
 
   const parsed = parseModelKey(activeModelDraft);
-  const localModels = ollamaStatus?.models ?? [];
-  const displayName = profileName.toLowerCase().startsWith("karan") ? "Karan" : profileName;
-
-  /* ── Settings screen ─────────────────────── */
-
-  if (screen === "settings") {
-    return (
-      <div className="robin-shell">
-        <div className="menu-bridge" />
-        <header className="screen-header">
-          <button className="text-button" onClick={() => setScreen("chat")}>Back</button>
-          <h1 className="screen-title">Settings</h1>
-          <button className="primary-button" disabled={isSaving} onClick={() => { void handleSave(); }}>
-            {isSaving ? "Saving" : "Save"}
-          </button>
-        </header>
-
-        {error && <div className="error-banner">{error}</div>}
-
-        <section className="settings-scroll">
-          <div className="setting-section">
-            <p className="setting-title">Model</p>
-            <label className="field-label">Active model</label>
-            <select className="field-input field-select" value={activeModelDraft} onChange={(e) => setActiveModelDraft(e.target.value)}>
-              <optgroup label="Web (Perplexity)">
-                {modelOptions.filter((o) => o.value.startsWith("search:")).map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </optgroup>
-              {modelOptions.some((o) => o.value.startsWith("local:")) && (
-                <optgroup label="Local (Ollama)">
-                  {modelOptions.filter((o) => o.value.startsWith("local:")).map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-            <label className="field-label">Custom model ID</label>
-            <input className="field-input" value={customModelDraft} placeholder="Override" onChange={(e) => setCustomModelDraft(e.target.value)} />
-          </div>
-
-          <div className="setting-section">
-            <p className="setting-title">Local Runtime</p>
-            <div className="ollama-status">
-              <span className={ollamaDotClass(ollamaStatus)} />
-              <span className="ollama-label">{localStatusText(ollamaStatus)}</span>
-            </div>
-            {localModels.length > 0 ? (
-              <div className="local-models-grid">
-                {localModels.map((m) => {
-                  const key = modelKey("local", m);
-                  const active = activeModelDraft === key;
-                  return (
-                    <button key={m} className={`local-model-row${active ? " local-model-row-active" : ""}`} onClick={() => setActiveModelDraft(key)}>
-                      <span className="local-model-name">{m}</span>
-                      {active && <span className="local-model-badge">active</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="setting-note setting-note-tight">
-                {ollamaStatus?.state === "ready" || ollamaStatus?.state === "no_model" ? "Run ollama pull <model>" : "Install Ollama for local models."}
-              </p>
-            )}
-            <button className="ghost-button" onClick={() => { void window.robin.app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download"); }}>
-              Get Ollama
-            </button>
-          </div>
-
-          <div className="setting-section">
-            <p className="setting-title">Credentials</p>
-            <label className="field-label">Perplexity API key</label>
-            <input className="field-input" type="password" placeholder={status?.perplexity.configured ? "Saved" : "pplx-..."} value={apiKeyDraft} onChange={(e) => setApiKeyDraft(e.target.value)} />
-          </div>
-
-          <div className="setting-section">
-            <p className="setting-title">App</p>
-            <label className="field-label">Global shortcut</label>
-            <input className="field-input" value={shortcutDraft} onChange={(e) => setShortcutDraft(e.target.value)} />
-          </div>
-        </section>
-      </div>
-    );
-  }
-
-  /* ── Chat screen ─────────────────────────── */
 
   return (
     <div className="robin-shell">
@@ -393,12 +598,6 @@ export function App() {
           </button>
         </div>
 
-        <button className="toolbar-brand toolbar-brand-button" title="New chat" onClick={handleBrandClick}>
-          <div className="toolbar-logo">
-            <img className="toolbar-logo-img" src={brandLogoIcon} alt="" aria-hidden="true" />
-          </div>
-        </button>
-
         <div className="toolbar-right">
           <button className="tool-btn" title="New chat" onClick={startNewChat}>
             <IconPlus />
@@ -411,13 +610,13 @@ export function App() {
           <div className="chat-sidebar-head">Chats</div>
           <div className="chat-sidebar-list">
             {threads.length > 0 ? (
-              threads.map((t) => (
+              threads.map((thread) => (
                 <button
-                  key={t.id}
-                  className={`chat-sidebar-item${activeThread?.id === t.id ? " chat-sidebar-item-active" : ""}`}
-                  onClick={() => selectThread(t.id)}
+                  key={thread.id}
+                  className={`chat-sidebar-item${activeThread?.id === thread.id ? " chat-sidebar-item-active" : ""}`}
+                  onClick={() => selectThread(thread.id)}
                 >
-                  {t.title || t.preview || "Untitled"}
+                  {thread.title || thread.preview || "Untitled"}
                 </button>
               ))
             ) : (
@@ -426,7 +625,7 @@ export function App() {
           </div>
           <div className="chat-sidebar-footer">
             <button
-              className="chat-sidebar-settings"
+              className={`chat-sidebar-settings${screen === "settings" ? " chat-sidebar-settings-active" : ""}`}
               onClick={() => setScreen("settings")}
             >
               <IconSettings />
@@ -437,77 +636,349 @@ export function App() {
         </aside>
 
         <div className="chat-main">
-          {error && <div className="error-banner">{error}</div>}
+          {screen === "settings" ? (
+            <>
+              <header className="settings-pane-header">
+                <h1 className="settings-pane-title">Settings</h1>
+              </header>
 
-          <section className={`chat-log${messages.length === 0 ? " chat-log-empty" : ""}`}>
-            {messages.length > 0 ? (
-              <>
-                {messages.map((msg) => (
-                  <article
-                    key={msg.id}
-                    className={`chat-msg ${msg.role === "user" ? "chat-msg-user" : "chat-msg-assistant"}${msg.status === "streaming" ? " chat-msg-streaming" : ""}`}
+              {error && <div className="error-banner">{error}</div>}
+
+              <section className="settings-pane-scroll">
+                <article className={`settings-accordion${settingsSections.models ? " settings-accordion-open" : ""}`}>
+                  <button
+                    type="button"
+                    className="settings-accordion-trigger"
+                    aria-expanded={settingsSections.models}
+                    onClick={() => toggleSettingsSection("models")}
                   >
-                    <span className="chat-msg-role">{msg.role === "assistant" ? "Robin" : "You"}</span>
-                    <div className="chat-msg-body">
-                      {msg.content}
-                      {msg.citations?.length ? (
-                        <div className="citation-list">
-                          {msg.citations.map((c) => (
-                            <button key={c.url} className="citation" onClick={() => { void window.robin.app.openExternal(c.url); }}>
-                              <span className="citation-title">{c.title}</span> — {safeCitationHost(c.url)}
+                    <span className="settings-accordion-label">Models</span>
+                    <span className={`settings-accordion-arrow${settingsSections.models ? " settings-accordion-arrow-open" : ""}`}>
+                      <IconChevron />
+                    </span>
+                  </button>
+
+                  {settingsSections.models ? (
+                    <div className="settings-accordion-content settings-accordion-content-models">
+                      <div className="settings-mode-toggle" role="tablist" aria-label="Assistant mode">
+                        <button
+                          className={`mode-tab${settingsMode === "cloud" ? " mode-tab-active" : ""}`}
+                          onClick={() => { void setPreferredMode("cloud"); }}
+                        >
+                          Cloud
+                        </button>
+                        <button
+                          className={`mode-tab${settingsMode === "local" ? " mode-tab-active" : ""}`}
+                          onClick={() => { void setPreferredMode("local"); }}
+                        >
+                          Local
+                        </button>
+                      </div>
+
+                      {settingsMode === "cloud" ? (
+                        <div className="setting-section setting-section-single">
+                          <label className="field-label">Default cloud provider</label>
+                          <select
+                            className="field-input field-select"
+                            value={status?.activeCloudProvider ?? "perplexity"}
+                            onChange={(event) => {
+                              const providerId = event.target.value as CloudProviderId;
+                              void persistConfig({
+                                preferredMode: "search",
+                                activeCloudProvider: providerId
+                              });
+                            }}
+                          >
+                            {CLOUD_PROVIDERS.map((provider) => (
+                              <option key={provider.id} value={provider.id}>{provider.label}</option>
+                            ))}
+                          </select>
+
+                          <p className="setting-title">Provider Keys (BYOK)</p>
+                          <div className="provider-grid">
+                            {CLOUD_PROVIDERS.map((provider) => {
+                              const keySaved = status?.cloudProviderKeys?.[provider.id];
+                              return (
+                                <article key={provider.id} className="provider-card">
+                                  <div className="provider-card-head">
+                                    <img className="provider-logo" src={providerPlaceholderLogo} alt={`${provider.label} logo`} />
+                                    <div className="provider-copy">
+                                      <p className="provider-name">{provider.label}</p>
+                                      <p className="provider-state">{keySaved ? "Key saved" : "No key added yet"}</p>
+                                    </div>
+                                  </div>
+                                  <input
+                                    className="field-input provider-key-input"
+                                    type="password"
+                                    placeholder={keySaved ? "Saved" : provider.keyPlaceholder}
+                                    value={providerKeyDrafts[provider.id]}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setProviderKeyDrafts((current) => ({
+                                        ...current,
+                                        [provider.id]: value
+                                      }));
+                                    }}
+                                    onBlur={() => { void saveProviderKey(provider.id); }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        void saveProviderKey(provider.id);
+                                      }
+                                    }}
+                                  />
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="setting-section">
+                            <p className="setting-title">Local Runtime</p>
+                            <div className="ollama-status">
+                              <span className={ollamaDotClass(ollamaStatus)} />
+                              <span className="ollama-label">{localStatusText(ollamaStatus)}</span>
+                            </div>
+                            <p className="setting-note">
+                              System RAM detected: {status?.systemMemoryGb ? `${status.systemMemoryGb} GB` : "Unknown"}.
+                            </p>
+
+                            <form className="custom-local-model-form" onSubmit={handleCustomLocalModelSubmit}>
+                              <label className="field-label">Pull any Ollama model</label>
+                              <div className="custom-local-model-row">
+                                <input
+                                  className="field-input custom-local-model-input"
+                                  value={customLocalModelDraft}
+                                  placeholder="e.g. qwen2.5:7b"
+                                  onChange={(event) => setCustomLocalModelDraft(event.target.value)}
+                                />
+                                <button
+                                  type="submit"
+                                  className="inline-action-button"
+                                  disabled={!customLocalModelDraft.trim() || Boolean(pullingModel)}
+                                >
+                                  {pullingModel ? "Downloading..." : "Download"}
+                                </button>
+                              </div>
+                            </form>
+
+                            {localModels.length > 0 ? (
+                              <div className="installed-model-list">
+                                {localModels.map((model) => {
+                                  const isActive = activeModelDraft === modelKey("local", model);
+                                  return (
+                                    <button
+                                      key={model}
+                                      className={`local-model-row${isActive ? " local-model-row-active" : ""}`}
+                                      onClick={() => { void applyModelSelection(modelKey("local", model)); }}
+                                    >
+                                      <span className="local-model-name">{model}</span>
+                                      {isActive && <span className="local-model-badge">active</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="setting-note setting-note-tight">
+                                No local models installed yet.
+                              </p>
+                            )}
+
+                            <button
+                              className="ghost-button"
+                              onClick={() => { void window.robin.app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download"); }}
+                            >
+                              Get Ollama
+                            </button>
+                          </div>
+
+                          <div className="setting-section setting-section-last">
+                            <div className="catalog-header-row">
+                              <p className="setting-title">Top Local Models</p>
+                              <button className="ghost-button" onClick={() => { void loadLocalCatalog(true); }}>
+                                Refresh
+                              </button>
+                            </div>
+
+                            {catalogLoading ? (
+                              <p className="setting-note">Loading top local models...</p>
+                            ) : catalogError ? (
+                              <p className="setting-note">{catalogError}</p>
+                            ) : (
+                              <div className="catalog-list">
+                                {groupedCatalogForDisplay.map((group) => (
+                                  <section key={group.category} className="catalog-group">
+                                    <div className="catalog-group-head">
+                                      <p className="catalog-group-title">{group.category}</p>
+                                      <span className="catalog-group-count">{group.items.length}</span>
+                                    </div>
+                                    <div className="catalog-group-items">
+                                      {group.items.map((item) => {
+                                        const installed = localModelSet.has(item.model.toLowerCase());
+                                        const busy = pullingModel === item.model;
+                                        const fit = ramFitTier(item.minRamGb, status?.systemMemoryGb);
+                                        return (
+                                          <article key={item.id} className="catalog-item">
+                                            <div className="catalog-item-head">
+                                              <div className="catalog-item-main">
+                                                <p className="catalog-item-title">{item.title}</p>
+                                                <p className="catalog-item-model">{item.model}</p>
+                                              </div>
+                                              <button
+                                                className="inline-action-button catalog-action-button"
+                                                disabled={busy}
+                                                onClick={() => { void useOrPullLocalModel(item.model); }}
+                                              >
+                                                {busy ? "Downloading..." : installed ? "Use" : "Download"}
+                                              </button>
+                                            </div>
+                                            <p className="catalog-item-description">{item.description}</p>
+                                            <p className="catalog-item-metrics">
+                                              <span className={`ram-fit ram-fit-${fit.tone}`}>{fit.label}</span>
+                                              {item.sizeLabel.toUpperCase()} • {formatModelFootprint(item.estimatedSizeMb)} • ~{item.minRamGb} GB RAM • {item.pulls} pulls
+                                            </p>
+                                          </article>
+                                        );
+                                      })}
+                                    </div>
+                                  </section>
+                                ))}
+                                {groupedCatalogForDisplay.length === 0 ? (
+                                  <p className="setting-note">No catalog models available yet.</p>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </article>
+
+                <article className={`settings-accordion${settingsSections.shortcut ? " settings-accordion-open" : ""}`}>
+                  <button
+                    type="button"
+                    className="settings-accordion-trigger"
+                    aria-expanded={settingsSections.shortcut}
+                    onClick={() => toggleSettingsSection("shortcut")}
+                  >
+                    <span className="settings-accordion-label">Shortcut</span>
+                    <span className={`settings-accordion-arrow${settingsSections.shortcut ? " settings-accordion-arrow-open" : ""}`}>
+                      <IconChevron />
+                    </span>
+                  </button>
+
+                  {settingsSections.shortcut ? (
+                    <div className="settings-accordion-content">
+                      <div className="setting-section setting-section-single setting-section-last">
+                        <label className="field-label">Global shortcut</label>
+                        <input
+                          className="field-input"
+                          value={shortcutDraft}
+                          onChange={(event) => setShortcutDraft(event.target.value)}
+                          onBlur={() => { void saveShortcutDraft(); }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void saveShortcutDraft();
+                            }
+                          }}
+                        />
+                        <p className="setting-note setting-note-tight">
+                          Enter an Electron accelerator (example: CommandOrControl+Shift+Space).
+                        </p>
+                        <div className="shortcut-presets">
+                          {SHORTCUT_PRESETS.map((preset) => (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              className={`shortcut-chip${shortcutDraft.trim() === preset.value ? " shortcut-chip-active" : ""}`}
+                              onClick={() => {
+                                setShortcutDraft(preset.value);
+                                void saveShortcutDraft(preset.value);
+                              }}
+                            >
+                              {preset.label}
                             </button>
                           ))}
                         </div>
-                      ) : null}
+                      </div>
                     </div>
-                    <span className="chat-msg-time">{formatTime(msg.createdAt)}</span>
-                  </article>
-                ))}
-                <div ref={chatEndRef} />
-              </>
-            ) : (
-              <div className="new-tab-state">
-                <div className="spotlight-scene" aria-hidden="true">
-                  <div className="spotlight-haze" />
-                  <div className="spotlight-beam" />
-                  <div className="spotlight-logo-wrap">
-                    <img className="spotlight-logo-img" src={brandLogoIcon} alt="" />
+                  ) : null}
+                </article>
+              </section>
+            </>
+          ) : (
+            <>
+              {error && <div className="error-banner">{error}</div>}
+
+              <section className={`chat-log${messages.length === 0 ? " chat-log-empty" : ""}`}>
+                {messages.length > 0 ? (
+                  <>
+                    {messages.map((message) => (
+                      <article
+                        key={message.id}
+                        className={`chat-msg ${message.role === "user" ? "chat-msg-user" : "chat-msg-assistant"}${message.status === "streaming" ? " chat-msg-streaming" : ""}`}
+                      >
+                        <span className="chat-msg-role">{message.role === "assistant" ? "Robin" : "You"}</span>
+                        <div className="chat-msg-body">
+                          {message.content}
+                          {message.citations?.length ? (
+                            <div className="citation-list">
+                              {message.citations.map((citation) => (
+                                <button key={citation.url} className="citation" onClick={() => { void window.robin.app.openExternal(citation.url); }}>
+                                  <span className="citation-title">{citation.title}</span> — {safeCitationHost(citation.url)}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="chat-msg-time">{formatTime(message.createdAt)}</span>
+                      </article>
+                    ))}
+                    <div ref={chatEndRef} />
+                  </>
+                ) : (
+                  <div className="new-tab-state">
+                    <h1 className="greeting-hi">
+                      Hi, <span className="greeting-name">{displayName}</span>
+                    </h1>
+                    <p className="greeting-question">What&apos;s up?</p>
+                  </div>
+                )}
+              </section>
+
+              <form className="composer" onSubmit={handleSend}>
+                <div className="composer-box">
+                  <textarea
+                    className="composer-input"
+                    placeholder="Ask Robin..."
+                    rows={1}
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSend(event);
+                      }
+                    }}
+                  />
+                  <div className="composer-footer">
+                    <div className="composer-meta">
+                      <span className={`composer-dot ${parsed.mode === "search" ? "composer-dot-web" : "composer-dot-local"}`} />
+                      <span className="composer-model">
+                        {isStreaming ? "Thinking..." : `${parsed.mode === "search" ? "Cloud" : "Local"} • ${shortName(activeModelDraft)}`}
+                      </span>
+                    </div>
+                    <button type="submit" className="send-btn" disabled={!prompt.trim() || isStreaming}>
+                      <IconSend />
+                    </button>
                   </div>
                 </div>
-                <h1 className="greeting-hi">
-                  Hi, <span className="greeting-name">{displayName}</span>
-                </h1>
-                <p className="greeting-question">What&apos;s up?</p>
-                <p className="greeting-prompt">Ask Anything</p>
-              </div>
-            )}
-          </section>
-
-          <form className="composer" onSubmit={handleSend}>
-            <div className="composer-box">
-              <textarea
-                className="composer-input"
-                placeholder="Ask Robin..."
-                rows={1}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(e); }
-                }}
-              />
-              <div className="composer-footer">
-                <div className="composer-meta">
-                  <span className={`composer-dot ${parsed.mode === "search" ? "composer-dot-web" : "composer-dot-local"}`} />
-                  <span className="composer-model">
-                    {isStreaming ? "Thinking..." : `${parsed.mode === "search" ? "Web" : "Local"} \u00b7 ${shortName(activeModelDraft)}`}
-                  </span>
-                </div>
-                <button type="submit" className="send-btn" disabled={!prompt.trim() || isStreaming}>
-                  <IconSend />
-                </button>
-              </div>
-            </div>
-          </form>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>

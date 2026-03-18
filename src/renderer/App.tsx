@@ -15,11 +15,6 @@ const FALLBACK_DASHBOARD_ICON: IconSvgElement = [
   ["path", { d: "M3.1903 8.95671C3 8.49728 3 7.91485 3 6.75C3 5.58515 3 5.00272 3.1903 4.54329C3.44404 3.93072 3.93072 3.44404 4.54329 3.1903C5.00272 3 5.58515 3 6.75 3C7.91485 3 8.49728 3 8.95671 3.1903C9.56928 3.44404 10.056 3.93072 10.3097 4.54329C10.5 5.00272 10.5 5.58515 10.5 6.75C10.5 7.91485 10.5 8.49728 10.3097 8.95671C10.056 9.56928 9.56928 10.056 8.95671 10.3097C8.49728 10.5 7.91485 10.5 6.75 10.5C5.58515 10.5 5.00272 10.5 4.54329 10.3097C3.93072 10.056 3.44404 9.56928 3.1903 8.95671Z", stroke: "currentColor", strokeLinecap: "square", strokeLinejoin: "round", strokeWidth: "1.5", key: "3" }]
 ] as const;
 
-const FALLBACK_SENT_ICON: IconSvgElement = [
-  ["path", { d: "M21.0477 3.05293C18.8697 0.707363 2.48648 6.4532 2.50001 8.551C2.51535 10.9299 8.89809 11.6617 10.6672 12.1581C11.7311 12.4565 12.016 12.7625 12.2613 13.8781C13.3723 18.9305 13.9301 21.4435 15.2014 21.4996C17.2278 21.5892 23.1733 5.342 21.0477 3.05293Z", stroke: "currentColor", strokeWidth: "1.5", key: "0" }],
-  ["path", { d: "M11.4999 12.5L14.9999 9", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "1" }]
-] as const;
-
 const FALLBACK_SETTINGS_ICON: IconSvgElement = [
   ["path", { d: "M15.5 12C15.5 13.933 13.933 15.5 12 15.5C10.067 15.5 8.5 13.933 8.5 12C8.5 10.067 10.067 8.5 12 8.5C13.933 8.5 15.5 10.067 15.5 12Z", stroke: "currentColor", strokeWidth: "1.5", key: "0" }],
   ["path", { d: "M21.011 14.0965C21.5329 13.9558 21.7939 13.8854 21.8969 13.7508C22 13.6163 22 13.3998 22 12.9669V11.0332C22 10.6003 22 10.3838 21.8969 10.2493C21.7938 10.1147 21.5329 10.0443 21.011 9.90358C19.0606 9.37759 17.8399 7.33851 18.3433 5.40087C18.4817 4.86799 18.5509 4.60156 18.4848 4.44529C18.4187 4.28902 18.2291 4.18134 17.8497 3.96596L16.125 2.98673C15.7528 2.77539 15.5667 2.66972 15.3997 2.69222C15.2326 2.71472 15.0442 2.90273 14.6672 3.27873C13.208 4.73448 10.7936 4.73442 9.33434 3.27864C8.95743 2.90263 8.76898 2.71463 8.60193 2.69212C8.43489 2.66962 8.24877 2.77529 7.87653 2.98663L6.15184 3.96587C5.77253 4.18123 5.58287 4.28891 5.51678 4.44515C5.45068 4.6014 5.51987 4.86787 5.65825 5.4008C6.16137 7.3385 4.93972 9.37763 2.98902 9.9036C2.46712 10.0443 2.20617 10.1147 2.10308 10.2492C2 10.3838 2 10.6003 2 11.0332V12.9669C2 13.3998 2 13.6163 2.10308 13.7508C2.20615 13.8854 2.46711 13.9558 2.98902 14.0965C4.9394 14.6225 6.16008 16.6616 5.65672 18.5992C5.51829 19.1321 5.44907 19.3985 5.51516 19.5548C5.58126 19.7111 5.77092 19.8188 6.15025 20.0341L7.87495 21.0134C8.24721 21.2247 8.43334 21.3304 8.6004 21.3079C8.76746 21.2854 8.95588 21.0973 9.33271 20.7213C10.7927 19.2644 13.2088 19.2643 14.6689 20.7212C15.0457 21.0973 15.2341 21.2853 15.4012 21.3078C15.5682 21.3303 15.7544 21.2246 16.1266 21.0133L17.8513 20.034C18.2307 19.8187 18.4204 19.711 18.4864 19.5547C18.5525 19.3984 18.4833 19.132 18.3448 18.5991C17.8412 16.6616 19.0609 14.6226 21.011 14.0965Z", stroke: "currentColor", strokeLinecap: "round", strokeWidth: "1.5", key: "1" }]
@@ -27,7 +22,6 @@ const FALLBACK_SETTINGS_ICON: IconSvgElement = [
 
 const Add01Icon = FALLBACK_ADD01_ICON;
 const DashboardSquare01Icon = FALLBACK_DASHBOARD_ICON;
-const SentIcon = FALLBACK_SENT_ICON;
 const Settings02Icon = FALLBACK_SETTINGS_ICON;
 
 const WEB_MODEL_CANDIDATES = [
@@ -82,7 +76,12 @@ function IconPlus() {
 }
 
 function IconSend() {
-  return <RobinIconGlyph icon={SentIcon} size={14} strokeWidth={2} />;
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 12H18" />
+      <path d="M12 6L18 12L12 18" />
+    </svg>
+  );
 }
 
 /* ── Helpers ────────────────────────────────────── */
@@ -401,9 +400,6 @@ export function App() {
         </button>
 
         <div className="toolbar-right">
-          <button className="tool-btn" title="Settings" onClick={() => setScreen("settings")}>
-            <IconSettings />
-          </button>
           <button className="tool-btn" title="New chat" onClick={startNewChat}>
             <IconPlus />
           </button>
@@ -427,6 +423,16 @@ export function App() {
             ) : (
               <p className="chat-sidebar-empty">No conversations yet</p>
             )}
+          </div>
+          <div className="chat-sidebar-footer">
+            <button
+              className="chat-sidebar-settings"
+              onClick={() => setScreen("settings")}
+            >
+              <IconSettings />
+              <span>Settings</span>
+            </button>
+            <p className="chat-sidebar-branding">2048 LABS</p>
           </div>
         </aside>
 

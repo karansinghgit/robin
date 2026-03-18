@@ -215,6 +215,7 @@ button:focus-visible {
 }
 
 .chat-sidebar-list {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -268,6 +269,64 @@ button:focus-visible {
   font-size: 11px;
   color: var(--t3);
   padding: 10px 8px;
+}
+
+.chat-sidebar-footer {
+  margin-top: auto;
+  padding: 8px 6px 4px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-sidebar-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--t2);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 90ms ease, color 90ms ease;
+}
+
+.chat-sidebar-settings svg {
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.chat-sidebar-settings:hover {
+  background: var(--raised);
+  color: var(--t1);
+}
+
+.chat-sidebar-settings-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chat-sidebar-settings-active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chat-sidebar-branding {
+  color: rgba(234, 236, 242, 0.35);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+  text-align: center;
+  padding: 0 2px 2px;
 }
 
 .chat-main {
@@ -622,7 +681,15 @@ button:focus-visible {
 .send-btn:not(:disabled) { background: var(--t1); }
 .send-btn:disabled { opacity: 0.4; cursor: default; }
 .send-btn:hover:not(:disabled) { opacity: 0.85; }
-.send-btn svg { width: 14px; height: 14px; fill: currentColor; }
+.send-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 /* ── Settings ───────────────────────── */
 

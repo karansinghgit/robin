@@ -22,6 +22,17 @@ export interface SettingsData {
   };
 }
 
+type LegacySettingsShape = {
+  onboardingCompleted?: boolean;
+  preferredMode?: "search" | "local";
+  shortcut?: string;
+  activeCloudProvider?: CloudProviderId;
+  perplexityModel?: string;
+  perplexityPreset?: string;
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
+};
+
 const DEFAULT_SETTINGS: SettingsData = {
   onboardingCompleted: false,
   preferredMode: "search",
@@ -44,7 +55,7 @@ const DEFAULT_SETTINGS: SettingsData = {
 const CLOUD_PROVIDER_ID_SET = new Set<CloudProviderId>(CLOUD_PROVIDER_IDS);
 
 function normalizeSettings(raw: unknown): SettingsData {
-  const source = (raw && typeof raw === "object") ? (raw as Partial<SettingsData>) : {};
+  const source = (raw && typeof raw === "object") ? (raw as Partial<SettingsData> & LegacySettingsShape) : {};
   const sourceProviders = (source.providers ?? {}) as Partial<SettingsData["providers"]>;
   const sourceCloud = (sourceProviders.cloud ?? {}) as Partial<SettingsData["providers"]["cloud"]>;
   const sourcePerplexity = (sourceProviders.perplexity ?? {}) as Partial<SettingsData["providers"]["perplexity"]>;
@@ -63,22 +74,32 @@ function normalizeSettings(raw: unknown): SettingsData {
       cloud: {
         activeProvider: typeof sourceCloud.activeProvider === "string" && CLOUD_PROVIDER_ID_SET.has(sourceCloud.activeProvider as CloudProviderId)
           ? sourceCloud.activeProvider as CloudProviderId
+          : typeof source.activeCloudProvider === "string" && CLOUD_PROVIDER_ID_SET.has(source.activeCloudProvider as CloudProviderId)
+            ? source.activeCloudProvider as CloudProviderId
           : DEFAULT_SETTINGS.providers.cloud.activeProvider
       },
       perplexity: {
         model: typeof sourcePerplexity.model === "string" && sourcePerplexity.model.trim()
           ? sourcePerplexity.model
+          : typeof source.perplexityModel === "string" && source.perplexityModel.trim()
+            ? source.perplexityModel
           : DEFAULT_SETTINGS.providers.perplexity.model,
         preset: typeof sourcePerplexity.preset === "string" && sourcePerplexity.preset.trim()
           ? sourcePerplexity.preset
+          : typeof source.perplexityPreset === "string" && source.perplexityPreset.trim()
+            ? source.perplexityPreset
           : DEFAULT_SETTINGS.providers.perplexity.preset
       },
       ollama: {
         baseUrl: typeof sourceOllama.baseUrl === "string" && sourceOllama.baseUrl.trim()
           ? sourceOllama.baseUrl
+          : typeof source.ollamaBaseUrl === "string" && source.ollamaBaseUrl.trim()
+            ? source.ollamaBaseUrl
           : DEFAULT_SETTINGS.providers.ollama.baseUrl,
         model: typeof sourceOllama.model === "string"
           ? sourceOllama.model
+          : typeof source.ollamaModel === "string"
+            ? source.ollamaModel
           : DEFAULT_SETTINGS.providers.ollama.model
       }
     }
@@ -109,7 +130,7 @@ export class AppStorage {
 
   async saveSettings(updater: (current: SettingsData) => SettingsData): Promise<SettingsData> {
     const current = await this.getSettings();
-    const next = updater(current);
+    const next = normalizeSettings(updater(current));
     await this.writeJson(this.settingsPath, next);
     return next;
   }

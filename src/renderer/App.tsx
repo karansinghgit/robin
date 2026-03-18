@@ -8,6 +8,7 @@ import {
   LocalModelCatalogItem,
   OllamaStatus,
   ProviderStatus,
+  RobinBridge,
   SaveConfigInput,
   ThreadSummary
 } from "../shared/contracts";
@@ -214,6 +215,14 @@ function ollamaDotClass(status: OllamaStatus | null): string {
   return "ollama-dot ollama-dot-off";
 }
 
+function getRobinBridge(): RobinBridge {
+  const bridge = (window as unknown as { robin?: RobinBridge }).robin;
+  if (!bridge) {
+    throw new Error("Robin desktop bridge is unavailable. Please restart Robin.");
+  }
+  return bridge;
+}
+
 export function App() {
   const [profileName, setProfileName] = useState("there");
   const [screen, setScreen] = useState<"chat" | "settings">("chat");
@@ -295,18 +304,20 @@ export function App() {
   }, [catalogForDisplay]);
 
   async function refreshThreads(selectedId?: string) {
-    const list = await window.robin.chat.listThreads();
+    const robin = getRobinBridge();
+    const list = await robin.chat.listThreads();
     setThreads(list);
     const id = selectedId ?? activeThread?.id ?? list[0]?.id;
     if (!id) {
       setActiveThread(null);
       return;
     }
-    setActiveThread(await window.robin.chat.loadThread(id));
+    setActiveThread(await robin.chat.loadThread(id));
   }
 
   async function refreshStatus() {
-    const [nextStatus, nextOllamaStatus] = await Promise.all([window.robin.providers.getStatus(), window.robin.ollama.detect()]);
+    const robin = getRobinBridge();
+    const [nextStatus, nextOllamaStatus] = await Promise.all([robin.providers.getStatus(), robin.ollama.detect()]);
     setStatus(nextStatus);
     setOllamaStatus(nextOllamaStatus);
     setShortcutDraft(nextStatus.shortcut);
@@ -326,7 +337,8 @@ export function App() {
     try {
       setCatalogLoading(true);
       setCatalogError(null);
-      const models = await window.robin.ollama.listCatalog(100);
+      const robin = getRobinBridge();
+      const models = await robin.ollama.listCatalog(100);
       setLocalCatalog(models);
     } catch (catalogFetchError) {
       setCatalogError(catalogFetchError instanceof Error ? catalogFetchError.message : "Could not load local model catalog.");
@@ -340,7 +352,8 @@ export function App() {
 
     void (async () => {
       try {
-        const profile = await window.robin.app.getProfile();
+        const robin = getRobinBridge();
+        const profile = await robin.app.getProfile();
         if (isActive) {
           setProfileName(profile.name || "there");
         }
@@ -382,7 +395,7 @@ export function App() {
           setScreen("chat");
           return;
         }
-        void window.robin.app.togglePanel();
+        void getRobinBridge().app.togglePanel();
       }
     };
     window.addEventListener("keydown", handler);
@@ -392,7 +405,7 @@ export function App() {
   async function persistConfig(patch: SaveConfigInput) {
     try {
       setError(null);
-      await window.robin.providers.saveConfig({
+      await getRobinBridge().providers.saveConfig({
         onboardingCompleted: true,
         ...patch
       });
@@ -462,7 +475,7 @@ export function App() {
     }
     try {
       setError(null);
-      const result = await window.robin.app.setShortcut(shortcut);
+      const result = await getRobinBridge().app.setShortcut(shortcut);
       setShortcutDraft(result.shortcut);
       if (!result.success) {
         setError("Shortcut in use.");
@@ -494,7 +507,7 @@ export function App() {
     try {
       setError(null);
       setPullingModel(targetModel);
-      await window.robin.ollama.pullModel(targetModel);
+      await getRobinBridge().ollama.pullModel(targetModel);
       await refreshStatus();
       await applyModelSelection(modelKey("local", targetModel));
     } catch (pullError) {
@@ -526,7 +539,7 @@ export function App() {
     setIsStreaming(true);
     const text = prompt.trim();
     setPrompt("");
-    await window.robin.chat.streamReply(
+    await getRobinBridge().chat.streamReply(
       { conversationId: activeThread?.id, mode: parsed.mode, prompt: text },
       {
         onThread: ({ thread }) => {
@@ -787,7 +800,7 @@ export function App() {
 
                             <button
                               className="ghost-button"
-                              onClick={() => { void window.robin.app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download"); }}
+                              onClick={() => { void getRobinBridge().app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download"); }}
                             >
                               Get Ollama
                             </button>
@@ -927,7 +940,7 @@ export function App() {
                           {message.citations?.length ? (
                             <div className="citation-list">
                               {message.citations.map((citation) => (
-                                <button key={citation.url} className="citation" onClick={() => { void window.robin.app.openExternal(citation.url); }}>
+                                <button key={citation.url} className="citation" onClick={() => { void getRobinBridge().app.openExternal(citation.url); }}>
                                   <span className="citation-title">{citation.title}</span> — {safeCitationHost(citation.url)}
                                 </button>
                               ))}

@@ -12,7 +12,7 @@ import {
   SaveConfigInput
 } from "../shared/contracts";
 import { SecureConfig } from "./secureConfig";
-import { AppStorage, buildThreadTitle } from "./storage";
+import { AppStorage, buildThreadTitle, SettingsData } from "./storage";
 import { OllamaProvider } from "./providers/ollamaProvider";
 import { PerplexityProvider } from "./providers/perplexityProvider";
 import os from "node:os";
@@ -31,6 +31,28 @@ function createMessage(role: ChatMessage["role"], content: string, status?: Chat
   };
 }
 
+function resolveProviderSettings(settings: SettingsData | undefined) {
+  const providers = settings?.providers ?? {
+    cloud: { activeProvider: "perplexity" as CloudProviderId },
+    perplexity: { model: "openai/gpt-5-mini", preset: "pro-search" },
+    ollama: { baseUrl: "http://localhost:11434", model: "" }
+  };
+
+  return {
+    cloud: {
+      activeProvider: providers.cloud?.activeProvider ?? "perplexity"
+    },
+    perplexity: {
+      model: providers.perplexity?.model ?? "openai/gpt-5-mini",
+      preset: providers.perplexity?.preset ?? "pro-search"
+    },
+    ollama: {
+      baseUrl: providers.ollama?.baseUrl ?? "http://localhost:11434",
+      model: providers.ollama?.model ?? ""
+    }
+  };
+}
+
 export class ProviderService {
   private readonly ollama = new OllamaProvider();
   private readonly perplexity = new PerplexityProvider();
@@ -42,10 +64,11 @@ export class ProviderService {
 
   async getStatus(): Promise<ProviderStatus> {
     const settings = await this.storage.getSettings();
+    const providers = resolveProviderSettings(settings);
     const cloudProviderKeys = await this.secureConfig.getConfiguredProviderMap();
     const ollama = await this.ollama.detect(
-      settings.providers.ollama.baseUrl,
-      settings.providers.ollama.model || undefined
+      providers.ollama.baseUrl,
+      providers.ollama.model || undefined
     );
 
     return {
@@ -53,12 +76,12 @@ export class ProviderService {
       preferredMode: settings.preferredMode,
       shortcut: settings.shortcut,
       systemMemoryGb: Number((os.totalmem() / (1024 ** 3)).toFixed(1)),
-      activeCloudProvider: settings.providers.cloud.activeProvider,
+      activeCloudProvider: providers.cloud.activeProvider,
       cloudProviderKeys,
       perplexity: {
         configured: cloudProviderKeys.perplexity,
-        model: settings.providers.perplexity.model,
-        preset: settings.providers.perplexity.preset
+        model: providers.perplexity.model,
+        preset: providers.perplexity.preset
       },
       ollama
     };
@@ -107,7 +130,8 @@ export class ProviderService {
 
   async detectOllama() {
     const settings = await this.storage.getSettings();
-    return this.ollama.detect(settings.providers.ollama.baseUrl, settings.providers.ollama.model || undefined);
+    const providers = resolveProviderSettings(settings);
+    return this.ollama.detect(providers.ollama.baseUrl, providers.ollama.model || undefined);
   }
 
   async listOllamaCatalog(limit = 100): Promise<LocalModelCatalogItem[]> {
@@ -116,7 +140,8 @@ export class ProviderService {
 
   async pullOllamaModel(model: string): Promise<ModelPullResult> {
     const settings = await this.storage.getSettings();
-    return this.ollama.pullModel(settings.providers.ollama.baseUrl, model);
+    const providers = resolveProviderSettings(settings);
+    return this.ollama.pullModel(providers.ollama.baseUrl, model);
   }
 
   async streamChat(
@@ -124,6 +149,7 @@ export class ProviderService {
     emit: (event: ChatStreamEvent) => void
   ): Promise<void> {
     const settings = await this.storage.getSettings();
+    const providers = resolveProviderSettings(settings);
     const currentThread =
       request.conversationId ? await this.storage.loadThread(request.conversationId) : null;
     const userMessage = createMessage("user", request.prompt, "complete");
@@ -154,7 +180,7 @@ export class ProviderService {
 
     try {
       if (request.mode === "search") {
-        const activeCloudProvider = settings.providers.cloud.activeProvider;
+        const activeCloudProvider = providers.cloud.activeProvider;
         if (activeCloudProvider !== "perplexity") {
           throw new Error(`${this.providerLabel(activeCloudProvider)} chat is not wired yet. For now, use Perplexity in Cloud mode or switch to Local.`);
         }
@@ -167,8 +193,8 @@ export class ProviderService {
         }
         const result = await this.perplexity.streamReply({
           apiKey,
-          model: settings.providers.perplexity.model,
-          preset: settings.providers.perplexity.preset,
+          model: providers.perplexity.model,
+          preset: providers.perplexity.preset,
           messages: thread.messages.filter((message) => message.id !== assistantMessage.id),
           onDelta: (delta) => {
             assistantMessage.content += delta;
@@ -184,8 +210,8 @@ export class ProviderService {
         finalCitations = result.citations;
       } else {
         const ollamaStatus = await this.ollama.detect(
-          settings.providers.ollama.baseUrl,
-          settings.providers.ollama.model || undefined
+          providers.ollama.baseUrl,
+          providers.ollama.model || undefined
         );
         if (ollamaStatus.state === "not_installed") {
           throw new Error("Ollama is not installed yet.");
@@ -197,8 +223,8 @@ export class ProviderService {
           throw new Error("Download an Ollama model before using Local mode.");
         }
         const result = await this.ollama.streamReply({
-          baseUrl: settings.providers.ollama.baseUrl,
-          model: settings.providers.ollama.model || ollamaStatus.selectedModel,
+          baseUrl: providers.ollama.baseUrl,
+          model: providers.ollama.model || ollamaStatus.selectedModel,
           messages: thread.messages.filter((message) => message.id !== assistantMessage.id),
           onDelta: (delta) => {
             assistantMessage.content += delta;

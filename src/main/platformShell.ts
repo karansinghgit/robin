@@ -11,14 +11,20 @@ export interface PlatformShellOptions {
 
 function createTrayImage() {
   const assetCandidates = [
-    path.join(app.getAppPath(), "assets", "image.png"),
-    path.join(process.cwd(), "assets", "image.png")
+    { path: path.join(app.getAppPath(), "assets", "trayTemplate.png"), template: true },
+    { path: path.join(app.getAppPath(), "assets", "image.png"), template: false },
+    { path: path.join(process.cwd(), "assets", "trayTemplate.png"), template: true },
+    { path: path.join(process.cwd(), "assets", "image.png"), template: false }
   ];
 
-  for (const iconPath of assetCandidates) {
-    const image = nativeImage.createFromPath(iconPath);
+  for (const candidate of assetCandidates) {
+    const image = nativeImage.createFromPath(candidate.path);
     if (!image.isEmpty()) {
-      return image.resize({ width: 18, height: 18 });
+      const resizedImage = image.resize({ width: 18, height: 18 });
+      if (process.platform === "darwin" && candidate.template) {
+        resizedImage.setTemplateImage(true);
+      }
+      return resizedImage;
     }
   }
 

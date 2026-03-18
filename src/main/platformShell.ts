@@ -58,10 +58,10 @@ function createTrayImage() {
     if (!image.isEmpty()) {
       const trimmedImage = trimTransparentPadding(image);
       const size = trimmedImage.getSize();
-      const targetHeight = 22;
+      const targetHeight = 18;
       const targetWidth = size.width > 0 && size.height > 0
-        ? Math.max(22, Math.round((size.width / size.height) * targetHeight))
-        : 22;
+        ? Math.max(18, Math.round((size.width / size.height) * targetHeight))
+        : 18;
       const resizedImage = trimmedImage.resize({ width: targetWidth, height: targetHeight, quality: "best" });
       if (process.platform === "darwin" && candidate.template) {
         resizedImage.setTemplateImage(true);
@@ -78,7 +78,7 @@ function createTrayImage() {
 
   const fallbackImage = nativeImage
     .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString("base64")}`)
-    .resize({ width: 22, height: 22, quality: "best" });
+    .resize({ width: 18, height: 18, quality: "best" });
 
   if (process.platform === "darwin") {
     fallbackImage.setTemplateImage(true);
@@ -95,7 +95,7 @@ export class PlatformShell {
   private pendingTrayBounds?: Electron.Rectangle;
   private lastTrayToggleAt = 0;
 
-  constructor(private readonly options: PlatformShellOptions) {}
+  constructor(private readonly options: PlatformShellOptions) { }
 
   create(): BrowserWindow {
     this.panel = new BrowserWindow({

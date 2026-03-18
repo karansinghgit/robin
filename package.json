@@ -1,7 +1,7 @@
 {
   "name": "robin-sidekick",
   "productName": "Robin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A mac-first menu bar sidekick for web-grounded chat and local AI.",
   "main": ".webpack/main",
   "scripts": {

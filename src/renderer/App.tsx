@@ -1,522 +1,427 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  AssistantMode,
-  ConversationThread,
-  OllamaStatus,
-  ProviderStatus,
-  ThreadSummary
-} from "../shared/contracts";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { AssistantMode, ConversationThread, OllamaStatus, ProviderStatus, SaveConfigInput, ThreadSummary } from "../shared/contracts";
+import brandLogoIcon from "./assets/icons/brand-logo.svg";
+import sidebarDashboardIcon from "./assets/icons/sidebar-dashboard.svg";
+
+const WEB_MODEL_CANDIDATES = [
+  "sonar",
+  "sonar-pro",
+  "sonar-reasoning",
+  "sonar-reasoning-pro",
+  "r1-1776",
+];
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function relativeTime(iso: string): string {
-  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
-    Math.round((new Date(iso).getTime() - Date.now()) / 3600000),
-    "hour"
-  );
-}
-
-function StatusBadge({ mode }: { mode: AssistantMode }) {
+function IconSettings() {
   return (
-    <span
-      className={
-        mode === "search"
-          ? "rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-amber-800"
-          : "rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-800"
-      }
-    >
-      {mode === "search" ? "Search" : "Local"}
-    </span>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M6.5 1h3l.3 1.5c.4.1.7.3 1 .5l1.4-.8 2.1 2.1-.8 1.4c.2.3.4.6.5 1L15.5 7v3l-1.5.3c-.1.4-.3.7-.5 1l.8 1.4-2.1 2.1-1.4-.8c-.3.2-.6.4-1 .5L9.5 15h-3l-.3-1.5c-.4-.1-.7-.3-1-.5l-1.4.8-2.1-2.1.8-1.4c-.2-.3-.4-.6-.5-1L.5 10V7l1.5-.3c.1-.4.3-.7.5-1L1.7 4.3l2.1-2.1 1.4.8c.3-.2.6-.4 1-.5L6.5 1zM8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" />
+    </svg>
   );
 }
 
-function EmptyState({ onModeSelect }: { onModeSelect: (mode: AssistantMode) => void }) {
+function IconPlus() {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8 text-center">
-      <div className="mb-4 inline-flex rounded-full border border-white/70 bg-white/75 px-4 py-2 text-xs uppercase tracking-[0.25em] text-slate-500 shadow-sm">
-        Your menu bar sidekick
-      </div>
-      <h2 className="font-display text-3xl text-ink">What do you want to get done today?</h2>
-      <p className="mt-3 max-w-sm text-sm leading-6 text-slate-600">
-        Use Search for cited, web-grounded answers or Local for private Ollama-backed chat.
-      </p>
-      <div className="mt-6 flex gap-3">
-        <button className="button button-primary" onClick={() => onModeSelect("search")}>
-          Start with Search
-        </button>
-        <button className="button button-secondary" onClick={() => onModeSelect("local")}>
-          Use Local mode
-        </button>
-      </div>
-    </div>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+    </svg>
   );
 }
 
-function Onboarding({
-  status,
-  ollamaStatus,
-  apiKey,
-  setApiKey,
-  onSaveSearch,
-  onContinueLocal,
-  onDownloadOllama,
-  saveState
-}: {
-  status: ProviderStatus | null;
-  ollamaStatus: OllamaStatus | null;
-  apiKey: string;
-  setApiKey: (value: string) => void;
-  onSaveSearch: () => void;
-  onContinueLocal: () => void;
-  onDownloadOllama: () => void;
-  saveState: "idle" | "saving";
-}) {
+function IconSend() {
   return (
-    <div className="grid h-full grid-cols-1 gap-4 overflow-y-auto p-5">
-      <section className="glass-panel animate-fade-up p-5">
-        <p className="eyebrow">First Run</p>
-        <h1 className="mt-2 font-display text-3xl text-ink">Robin is ready to help.</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-600">
-          Pick the path that gets you moving right away. Search uses your Perplexity API key.
-          Local mode uses Ollama on your machine.
-        </p>
-      </section>
-
-      <section className="glass-panel grid gap-5 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow">Option One</p>
-            <h2 className="mt-1 text-lg font-semibold text-ink">Use web search with your API key</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Best if you want cited answers immediately and do not want to install a local model.
-            </p>
-          </div>
-          <StatusBadge mode="search" />
-        </div>
-        <label className="grid gap-2">
-          <span className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
-            Perplexity API Key
-          </span>
-          <input
-            className="input"
-            placeholder="pplx-..."
-            type="password"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-          />
-        </label>
-        <button className="button button-primary" disabled={!apiKey || saveState === "saving"} onClick={onSaveSearch}>
-          {saveState === "saving" ? "Saving..." : status?.perplexity.configured ? "Update key" : "Save and continue"}
-        </button>
-      </section>
-
-      <section className="glass-panel grid gap-5 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="eyebrow">Option Two</p>
-            <h2 className="mt-1 text-lg font-semibold text-ink">Set up local Ollama</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Best if you want local or private chat. Robin can detect Ollama, but v1 does not install or manage it for you.
-            </p>
-          </div>
-          <StatusBadge mode="local" />
-        </div>
-
-        <div className="rounded-3xl border border-white/70 bg-white/80 p-4">
-          <p className="text-sm font-medium text-ink">
-            {ollamaStatus?.state === "ready" && "Ollama is ready."}
-            {ollamaStatus?.state === "no_model" && "Ollama is running, but no model is installed yet."}
-            {ollamaStatus?.state === "not_running" && "Ollama is installed, but not running."}
-            {ollamaStatus?.state === "not_installed" && "Ollama is not installed yet."}
-          </p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            {ollamaStatus?.state === "ready" &&
-              `Available models: ${ollamaStatus.models.join(", ")}`}
-            {ollamaStatus?.state === "no_model" &&
-              "Install Ollama, then run a model such as `ollama run llama3.2` or pull a model from the Ollama library."}
-            {ollamaStatus?.state === "not_running" &&
-              "Start Ollama locally so Robin can connect to http://localhost:11434."}
-            {ollamaStatus?.state === "not_installed" &&
-              "Download Ollama, install it, and run one model before coming back here."}
-          </p>
-          <button
-            className="mt-3 inline-flex text-sm font-medium text-pine underline decoration-pine/40 underline-offset-4"
-            onClick={onDownloadOllama}
-          >
-            Download Ollama
-          </button>
-        </div>
-
-        <button className="button button-secondary" onClick={onContinueLocal}>
-          Continue with Local mode
-        </button>
-      </section>
-    </div>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M2.5 8L13 3 8 13.5 7 9 2.5 8z" />
+    </svg>
   );
 }
+
+/* ── Helpers ────────────────────────────────────── */
+
+function modelKey(mode: AssistantMode, model: string): string {
+  return `${mode}:${model}`;
+}
+
+function parseModelKey(value: string): { mode: AssistantMode; model: string } {
+  if (value.startsWith("local:")) return { mode: "local", model: value.slice(6) };
+  return { mode: "search", model: value.slice(7) };
+}
+
+function shortName(value: string): string {
+  const parsed = parseModelKey(value).model;
+  return parsed.split("/").pop() || parsed || "—";
+}
+
+function localStatusText(s: OllamaStatus | null): string {
+  if (!s) return "Checking";
+  if (s.state === "ready") return s.version ? `Ollama ${s.version}` : "Running";
+  if (s.state === "no_model") return "No models pulled";
+  if (s.state === "not_running") return "Not running";
+  return "Not installed";
+}
+
+function ollamaDotClass(s: OllamaStatus | null): string {
+  if (!s) return "ollama-dot ollama-dot-off";
+  if (s.state === "ready") return "ollama-dot ollama-dot-ready";
+  if (s.state === "no_model" || s.state === "not_running") return "ollama-dot ollama-dot-warning";
+  return "ollama-dot ollama-dot-off";
+}
+
+/* ── App ────────────────────────────────────────── */
 
 export function App() {
+  const [profileName, setProfileName] = useState("there");
+  const [screen, setScreen] = useState<"chat" | "settings">("chat");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeThread, setActiveThread] = useState<ConversationThread | null>(null);
-  const [mode, setMode] = useState<AssistantMode>("search");
   const [prompt, setPrompt] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<"idle" | "saving">("idle");
-  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [shortcutDraft, setShortcutDraft] = useState("CommandOrControl+Shift+Space");
+  const [activeModelDraft, setActiveModelDraft] = useState(modelKey("search", "sonar"));
+  const [customModelDraft, setCustomModelDraft] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const messages = activeThread?.messages ?? [];
 
-  const sortedThreads = useMemo(
-    () => threads.slice().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-    [threads]
-  );
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, messages[messages.length - 1]?.content]);
+
+  const modelOptions = useMemo(() => {
+    const opts = new Map<string, string>();
+    const curPplx = status?.perplexity.model || "sonar";
+    const curLocal = status?.ollama.selectedModel || "";
+    for (const m of WEB_MODEL_CANDIDATES) opts.set(modelKey("search", m), m);
+    opts.set(modelKey("search", curPplx), curPplx);
+    for (const m of ollamaStatus?.models ?? []) opts.set(modelKey("local", m), m);
+    if (curLocal) opts.set(modelKey("local", curLocal), curLocal);
+    return Array.from(opts.entries()).map(([value, label]) => ({ value, label }));
+  }, [status?.perplexity.model, status?.ollama.selectedModel, ollamaStatus?.models]);
 
   async function refreshThreads(selectedId?: string) {
-    const nextThreads = await window.robin.chat.listThreads();
-    setThreads(nextThreads);
-
-    const targetId = selectedId ?? activeThread?.id ?? nextThreads[0]?.id;
-    if (targetId) {
-      const thread = await window.robin.chat.loadThread(targetId);
-      setActiveThread(thread);
-    }
+    const list = await window.robin.chat.listThreads();
+    setThreads(list);
+    const id = selectedId ?? activeThread?.id ?? list[0]?.id;
+    if (!id) { setActiveThread(null); return; }
+    setActiveThread(await window.robin.chat.loadThread(id));
   }
 
   async function refreshStatus() {
-    const [nextStatus, nextOllama] = await Promise.all([
-      window.robin.providers.getStatus(),
-      window.robin.ollama.detect()
-    ]);
-    setStatus(nextStatus);
-    setOllamaStatus(nextOllama);
-    setMode(nextStatus.preferredMode);
-    setShortcutDraft(nextStatus.shortcut);
+    const [s, o] = await Promise.all([window.robin.providers.getStatus(), window.robin.ollama.detect()]);
+    setStatus(s);
+    setOllamaStatus(o);
+    setShortcutDraft(s.shortcut);
+    setActiveModelDraft(
+      s.preferredMode === "local"
+        ? modelKey("local", s.ollama.selectedModel || o.selectedModel || "")
+        : modelKey("search", s.perplexity.model)
+    );
   }
 
   useEffect(() => {
     void (async () => {
+      try { setProfileName((await window.robin.app.getProfile()).name || "there"); }
+      catch { setProfileName("there"); }
       await Promise.all([refreshStatus(), refreshThreads()]);
     })();
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (sidebarOpen) { setSidebarOpen(false); return; }
+        if (screen === "settings") { setScreen("chat"); return; }
         void window.robin.app.togglePanel();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [screen, sidebarOpen]);
 
-  async function selectThread(id: string) {
-    const thread = await window.robin.chat.loadThread(id);
-    setActiveThread(thread);
-    if (thread) {
-      setMode(thread.mode);
-    }
-  }
-
-  async function handleSaveSearch() {
-    setSaveState("saving");
+  async function handleSave() {
+    setIsSaving(true);
     setError(null);
     try {
-      const next = await window.robin.providers.saveConfig({
+      const shortRes = await window.robin.app.setShortcut(shortcutDraft.trim());
+      const parsed = parseModelKey(activeModelDraft);
+      const model = customModelDraft.trim() || parsed.model;
+      const payload: SaveConfigInput = {
         onboardingCompleted: true,
-        preferredMode: "search",
-        perplexityApiKey: apiKey
-      });
-      setStatus(next);
-      setMode("search");
-      setApiKey("");
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Could not save your API key.");
+        preferredMode: parsed.mode,
+        shortcut: shortRes.shortcut,
+      };
+      if (parsed.mode === "search") payload.perplexityModel = model || status?.perplexity.model;
+      else payload.ollamaModel = model || ollamaStatus?.selectedModel || undefined;
+      if (apiKeyDraft.trim()) payload.perplexityApiKey = apiKeyDraft.trim();
+      await window.robin.providers.saveConfig(payload);
+      setApiKeyDraft("");
+      setCustomModelDraft("");
+      setScreen("chat");
+      if (!shortRes.success) setError("Shortcut in use.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
     } finally {
-      setSaveState("idle");
+      setIsSaving(false);
+      await refreshStatus();
     }
-  }
-
-  async function handleContinueLocal() {
-    const next = await window.robin.providers.saveConfig({
-      onboardingCompleted: true,
-      preferredMode: "local",
-      ollamaModel: ollamaStatus?.selectedModel
-    });
-    setStatus(next);
-    setMode("local");
   }
 
   async function handleSend(event: FormEvent) {
     event.preventDefault();
-    if (!prompt.trim() || isStreaming) {
-      return;
-    }
-
+    if (!prompt.trim() || isStreaming) return;
+    const parsed = parseModelKey(activeModelDraft);
+    if (parsed.mode === "local" && !parsed.model) { setError("Select a local model first."); return; }
     setError(null);
     setIsStreaming(true);
-    const currentPrompt = prompt.trim();
+    const text = prompt.trim();
     setPrompt("");
-
     await window.robin.chat.streamReply(
+      { conversationId: activeThread?.id, mode: parsed.mode, prompt: text },
       {
-        conversationId: activeThread?.id,
-        mode,
-        prompt: currentPrompt
-      },
-      {
-        onThread: ({ thread }) => {
-          setActiveThread({ ...thread });
-          void refreshThreads(thread.id);
-        },
+        onThread: ({ thread }) => { setActiveThread({ ...thread }); void refreshThreads(thread.id); },
         onDelta: ({ messageId, delta }) => {
-          setActiveThread((current) => {
-            if (!current) {
-              return current;
-            }
-            return {
-              ...current,
-              messages: current.messages.map((message) =>
-                message.id === messageId
-                  ? { ...message, content: message.content + delta, status: "streaming" }
-                  : message
-              )
-            };
-          });
+          setActiveThread((c) => c ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, content: m.content + delta, status: "streaming" } : m) } : c);
         },
         onCitations: ({ messageId, citations }) => {
-          setActiveThread((current) => {
-            if (!current) {
-              return current;
-            }
-            return {
-              ...current,
-              messages: current.messages.map((message) =>
-                message.id === messageId ? { ...message, citations } : message
-              )
-            };
-          });
+          setActiveThread((c) => c ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, citations } : m) } : c);
         },
-        onDone: ({ thread }) => {
-          setIsStreaming(false);
-          setActiveThread({ ...thread });
-          void refreshThreads(thread.id);
-        },
-        onError: ({ message }) => {
-          setIsStreaming(false);
-          setError(message);
-          void refreshThreads(activeThread?.id);
-        }
+        onDone: ({ thread }) => { setIsStreaming(false); setActiveThread({ ...thread }); void refreshThreads(thread.id); },
+        onError: ({ message }) => { setIsStreaming(false); setError(message); void refreshThreads(activeThread?.id); },
       }
     );
   }
 
-  async function handleSaveSettings() {
+  function startNewChat() {
+    setActiveThread(null);
     setError(null);
-    try {
-      const shortcutResult = await window.robin.app.setShortcut(shortcutDraft);
-      const next = await window.robin.providers.saveConfig({
-        preferredMode: mode,
-        shortcut: shortcutResult.shortcut
-      });
-      setStatus(next);
-      setShortcutDraft(next.shortcut);
-      setShowSettings(false);
-      if (!shortcutResult.success) {
-        setError("That shortcut could not be registered, so Robin kept the previous one.");
-      }
-    } catch (settingsError) {
-      setError(settingsError instanceof Error ? settingsError.message : "Could not save settings.");
-    }
   }
 
-  const needsOnboarding = status ? !status.onboardingCompleted : true;
+  function handleBrandClick() {
+    setSidebarOpen(false);
+    startNewChat();
+  }
+
+  function selectThread(id: string) {
+    void refreshThreads(id);
+  }
+
+  const parsed = parseModelKey(activeModelDraft);
+  const localModels = ollamaStatus?.models ?? [];
+  const displayName = profileName.toLowerCase().startsWith("karan") ? "Karan" : profileName;
+
+  /* ── Settings screen ─────────────────────── */
+
+  if (screen === "settings") {
+    return (
+      <div className="robin-shell">
+        <div className="menu-bridge" />
+        <header className="screen-header">
+          <button className="text-button" onClick={() => setScreen("chat")}>Back</button>
+          <h1 className="screen-title">Settings</h1>
+          <button className="primary-button" disabled={isSaving} onClick={() => { void handleSave(); }}>
+            {isSaving ? "Saving" : "Save"}
+          </button>
+        </header>
+
+        {error && <div className="error-banner">{error}</div>}
+
+        <section className="settings-scroll">
+          <div className="setting-section">
+            <p className="setting-title">Model</p>
+            <label className="field-label">Active model</label>
+            <select className="field-input field-select" value={activeModelDraft} onChange={(e) => setActiveModelDraft(e.target.value)}>
+              <optgroup label="Web (Perplexity)">
+                {modelOptions.filter((o) => o.value.startsWith("search:")).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </optgroup>
+              {modelOptions.some((o) => o.value.startsWith("local:")) && (
+                <optgroup label="Local (Ollama)">
+                  {modelOptions.filter((o) => o.value.startsWith("local:")).map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <label className="field-label">Custom model ID</label>
+            <input className="field-input" value={customModelDraft} placeholder="Override" onChange={(e) => setCustomModelDraft(e.target.value)} />
+          </div>
+
+          <div className="setting-section">
+            <p className="setting-title">Local Runtime</p>
+            <div className="ollama-status">
+              <span className={ollamaDotClass(ollamaStatus)} />
+              <span className="ollama-label">{localStatusText(ollamaStatus)}</span>
+            </div>
+            {localModels.length > 0 ? (
+              <div className="local-models-grid">
+                {localModels.map((m) => {
+                  const key = modelKey("local", m);
+                  const active = activeModelDraft === key;
+                  return (
+                    <button key={m} className={`local-model-row${active ? " local-model-row-active" : ""}`} onClick={() => setActiveModelDraft(key)}>
+                      <span className="local-model-name">{m}</span>
+                      {active && <span className="local-model-badge">active</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="setting-note setting-note-tight">
+                {ollamaStatus?.state === "ready" || ollamaStatus?.state === "no_model" ? "Run ollama pull <model>" : "Install Ollama for local models."}
+              </p>
+            )}
+            <button className="ghost-button" onClick={() => { void window.robin.app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download"); }}>
+              Get Ollama
+            </button>
+          </div>
+
+          <div className="setting-section">
+            <p className="setting-title">Credentials</p>
+            <label className="field-label">Perplexity API key</label>
+            <input className="field-input" type="password" placeholder={status?.perplexity.configured ? "Saved" : "pplx-..."} value={apiKeyDraft} onChange={(e) => setApiKeyDraft(e.target.value)} />
+          </div>
+
+          <div className="setting-section">
+            <p className="setting-title">App</p>
+            <label className="field-label">Global shortcut</label>
+            <input className="field-input" value={shortcutDraft} onChange={(e) => setShortcutDraft(e.target.value)} />
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  /* ── Chat screen ─────────────────────────── */
 
   return (
-    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(249,115,22,0.22),_transparent_32%),linear-gradient(180deg,_#f7f3ea_0%,_#f1e8dc_52%,_#dfe9e4_100%)] p-3 font-body text-ink">
-      <div className="relative flex h-full overflow-hidden rounded-[32px] border border-white/80 bg-white/50 shadow-panel backdrop-blur-2xl">
-        <aside className="hidden w-[154px] border-r border-white/60 bg-white/35 p-3 md:flex md:flex-col">
-          <div className="rounded-[24px] bg-white/80 p-3 shadow-sm">
-            <p className="eyebrow">Robin</p>
-            <h1 className="mt-2 font-display text-xl">Sidekick</h1>
-            <p className="mt-2 text-xs leading-5 text-slate-500">Always one shortcut away.</p>
-          </div>
+    <div className="robin-shell">
+      <div className="menu-bridge" />
 
-          <div className="mt-3 flex items-center gap-2 rounded-2xl border border-white/60 bg-white/70 p-2">
-            <button
-              className={`mode-pill ${mode === "search" ? "mode-pill-active" : ""}`}
-              onClick={() => setMode("search")}
-            >
-              Search
-            </button>
-            <button
-              className={`mode-pill ${mode === "local" ? "mode-pill-active" : ""}`}
-              onClick={() => setMode("local")}
-            >
-              Local
-            </button>
-          </div>
-
-          <button className="button button-secondary mt-3" onClick={() => setShowSettings((current) => !current)}>
-            {showSettings ? "Close settings" : "Settings"}
+      <div className="toolbar">
+        <div className="toolbar-left">
+          <button
+            className={`tool-btn tool-btn-dashboard${sidebarOpen ? " tool-btn-active" : ""}`}
+            title={sidebarOpen ? "Hide chats" : "Show chats"}
+            aria-label={sidebarOpen ? "Hide chats" : "Show chats"}
+            onClick={() => setSidebarOpen((current) => !current)}
+          >
+            <img className="tool-icon-img" src={sidebarDashboardIcon} alt="" aria-hidden="true" />
           </button>
+        </div>
 
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
-            <p className="eyebrow px-2">Recent</p>
-            <div className="mt-2 grid gap-2">
-              {sortedThreads.map((thread) => (
+        <button className="toolbar-brand toolbar-brand-button" title="New chat" onClick={handleBrandClick}>
+          <div className="toolbar-logo">
+            <img className="toolbar-logo-img" src={brandLogoIcon} alt="" aria-hidden="true" />
+          </div>
+          <span className="toolbar-name">Robin</span>
+        </button>
+
+        <div className="toolbar-right">
+          <button className="tool-btn" title="Settings" onClick={() => setScreen("settings")}>
+            <IconSettings />
+          </button>
+          <button className="tool-btn" title="New chat" onClick={startNewChat}>
+            <IconPlus />
+          </button>
+        </div>
+      </div>
+
+      <div className="chat-workspace">
+        <aside className={`chat-sidebar${sidebarOpen ? " chat-sidebar-open" : ""}`}>
+          <div className="chat-sidebar-head">Chats</div>
+          <div className="chat-sidebar-list">
+            {threads.length > 0 ? (
+              threads.map((t) => (
                 <button
-                  key={thread.id}
-                  className={`thread-card ${activeThread?.id === thread.id ? "thread-card-active" : ""}`}
-                  onClick={() => {
-                    void selectThread(thread.id);
-                  }}
+                  key={t.id}
+                  className={`chat-sidebar-item${activeThread?.id === t.id ? " chat-sidebar-item-active" : ""}`}
+                  onClick={() => selectThread(t.id)}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <StatusBadge mode={thread.mode} />
-                    <span className="text-[10px] uppercase tracking-[0.16em] text-slate-400">
-                      {relativeTime(thread.updatedAt)}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-left text-sm font-medium text-slate-700">{thread.title}</p>
-                  <p className="mt-1 line-clamp-2 text-left text-xs leading-5 text-slate-500">{thread.preview}</p>
+                  {t.title || t.preview || "Untitled"}
                 </button>
-              ))}
-            </div>
+              ))
+            ) : (
+              <p className="chat-sidebar-empty">No conversations yet</p>
+            )}
           </div>
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between gap-4 border-b border-white/60 px-5 py-4">
-            <div>
-              <p className="eyebrow">Today</p>
-              <h2 className="font-display text-2xl text-ink">
-                {needsOnboarding ? "Get Robin configured" : "What do you want to get done today?"}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <StatusBadge mode={mode} />
-              <button className="button button-ghost" onClick={() => setActiveThread(null)}>
-                New chat
-              </button>
-            </div>
-          </header>
+        <div className="chat-main">
+          {error && <div className="error-banner">{error}</div>}
 
-          {showSettings && status ? (
-            <section className="border-b border-white/60 bg-white/55 px-5 py-4">
-              <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-                <label className="grid gap-2">
-                  <span className="eyebrow">Global Shortcut</span>
-                  <input className="input" value={shortcutDraft} onChange={(event) => setShortcutDraft(event.target.value)} />
-                </label>
-                <button className="button button-primary" onClick={handleSaveSettings}>
-                  Save settings
-                </button>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Search uses {status.perplexity.model}. Local mode points at {status.ollama.baseUrl}.
-              </p>
-            </section>
-          ) : null}
-
-          {error ? (
-            <div className="mx-5 mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {needsOnboarding ? (
-              <Onboarding
-                status={status}
-                ollamaStatus={ollamaStatus}
-                apiKey={apiKey}
-                setApiKey={setApiKey}
-                onSaveSearch={() => {
-                  void handleSaveSearch();
-                }}
-                onContinueLocal={() => {
-                  void handleContinueLocal();
-                }}
-                onDownloadOllama={() => {
-                  void window.robin.app.openExternal(ollamaStatus?.downloadUrl ?? "https://ollama.com/download");
-                }}
-                saveState={saveState}
-              />
-            ) : activeThread ? (
-              <div className="flex h-full flex-col">
-                <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-                  {messages.map((message) => (
-                    <article
-                      key={message.id}
-                      className={`message-card ${
-                        message.role === "user"
-                          ? "ml-10 border-transparent bg-ink text-white"
-                          : "mr-10 bg-white/80 text-slate-800"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.18em] text-current/60">
-                          {message.role === "assistant" ? "Robin" : "You"}
-                        </p>
-                        <span className="text-xs text-current/60">{formatTime(message.createdAt)}</span>
-                      </div>
-                      <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{message.content}</p>
-                      {message.citations?.length ? (
-                        <div className="mt-4 grid gap-2">
-                          {message.citations.map((citation) => (
-                            <button
-                              key={citation.url}
-                              className="rounded-2xl border border-slate-200/70 bg-slate-50/90 px-3 py-2 text-left text-xs text-slate-600 transition hover:border-pine/30 hover:text-pine"
-                              onClick={() => {
-                                void window.robin.app.openExternal(citation.url);
-                              }}
-                            >
-                              <span className="block font-medium text-slate-800">{citation.title}</span>
-                              <span className="mt-1 block truncate">{citation.url}</span>
+          <section className={`chat-log${messages.length === 0 ? " chat-log-empty" : ""}`}>
+            {messages.length > 0 ? (
+              <>
+                {messages.map((msg) => (
+                  <article
+                    key={msg.id}
+                    className={`chat-msg ${msg.role === "user" ? "chat-msg-user" : "chat-msg-assistant"}${msg.status === "streaming" ? " chat-msg-streaming" : ""}`}
+                  >
+                    <span className="chat-msg-role">{msg.role === "assistant" ? "Robin" : "You"}</span>
+                    <div className="chat-msg-body">
+                      {msg.content}
+                      {msg.citations?.length ? (
+                        <div className="citation-list">
+                          {msg.citations.map((c) => (
+                            <button key={c.url} className="citation" onClick={() => { void window.robin.app.openExternal(c.url); }}>
+                              <span className="citation-title">{c.title}</span> — {new URL(c.url).hostname}
                             </button>
                           ))}
                         </div>
                       ) : null}
-                    </article>
-                  ))}
-                </div>
-                <form className="border-t border-white/60 px-5 py-4" onSubmit={handleSend}>
-                  <div className="rounded-[28px] border border-white/80 bg-white/75 p-3 shadow-sm">
-                    <textarea
-                      className="min-h-[88px] w-full resize-none border-none bg-transparent text-sm leading-7 text-ink outline-none placeholder:text-slate-400"
-                      placeholder={
-                        mode === "search"
-                          ? "Ask for web-grounded answers, summaries, or research..."
-                          : "Chat privately with your local model..."
-                      }
-                      value={prompt}
-                      onChange={(event) => setPrompt(event.target.value)}
-                    />
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <p className="text-xs text-slate-500">
-                        {mode === "search"
-                          ? "Search returns cited answers via Perplexity."
-                          : "Local mode stays on your machine via Ollama."}
-                      </p>
-                      <button className="button button-primary" disabled={!prompt.trim() || isStreaming}>
-                        {isStreaming ? "Thinking..." : "Send"}
-                      </button>
                     </div>
-                  </div>
-                </form>
-              </div>
+                    <span className="chat-msg-time">{formatTime(msg.createdAt)}</span>
+                  </article>
+                ))}
+                <div ref={chatEndRef} />
+              </>
             ) : (
-              <EmptyState onModeSelect={setMode} />
+              <div className="new-tab-state">
+                <h1 className="greeting-hi">
+                  Hi, <span className="greeting-name">{displayName}</span>
+                </h1>
+                <p className="greeting-question">What&apos;s up?</p>
+                <p className="greeting-prompt">Ask Anything</p>
+              </div>
             )}
-          </div>
-        </main>
+          </section>
+
+          <form className="composer" onSubmit={handleSend}>
+            <div className="composer-box">
+              <textarea
+                className="composer-input"
+                placeholder="Ask Robin..."
+                rows={1}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(e); }
+                }}
+              />
+              <div className="composer-footer">
+                <div className="composer-meta">
+                  <span className={`composer-dot ${parsed.mode === "search" ? "composer-dot-web" : "composer-dot-local"}`} />
+                  <span className="composer-model">
+                    {isStreaming ? "Thinking..." : `${parsed.mode === "search" ? "Web" : "Local"} \u00b7 ${shortName(activeModelDraft)}`}
+                  </span>
+                </div>
+                <button type="submit" className="send-btn" disabled={!prompt.trim() || isStreaming}>
+                  <IconSend />
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

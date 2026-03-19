@@ -31,7 +31,11 @@ const IPC_CHANNELS = {
   todosCreate: "todos:create",
   todosUpdate: "todos:update",
   todosReorder: "todos:reorder",
-  todosDelete: "todos:delete"
+  todosDelete: "todos:delete",
+  notesList: "notes:list",
+  notesCreate: "notes:create",
+  notesUpdate: "notes:update",
+  notesDelete: "notes:delete"
 } as const;
 
 let shell: PlatformShell;
@@ -275,6 +279,11 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle(IPC_CHANNELS.todosUpdate, async (_event, id: string, changes: Partial<{ title: string; completed: boolean; order: number }>) => storage.updateTodo(id, changes));
   ipcMain.handle(IPC_CHANNELS.todosReorder, async (_event, orderedIds: string[]) => storage.reorderTodos(orderedIds));
   ipcMain.handle(IPC_CHANNELS.todosDelete, async (_event, id: string) => storage.deleteTodo(id));
+
+  ipcMain.handle(IPC_CHANNELS.notesList, async () => storage.listNotes());
+  ipcMain.handle(IPC_CHANNELS.notesCreate, async (_event, title: string) => storage.createNote(title));
+  ipcMain.handle(IPC_CHANNELS.notesUpdate, async (_event, id: string, changes: Partial<{ title: string; content: string }>) => storage.updateNote(id, changes));
+  ipcMain.handle(IPC_CHANNELS.notesDelete, async (_event, id: string) => storage.deleteNote(id));
 
   ipcMain.handle(IPC_CHANNELS.startStream, async (event, request: ChatStreamRequest) => {
     const sender = event.sender;

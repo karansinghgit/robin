@@ -7,6 +7,7 @@ import {
   CloudModelCatalogItem,
   CloudProviderId,
   ConversationThread,
+  NoteItem,
   ThreadSummary,
   TodoItem
 } from "../shared/contracts";
@@ -186,17 +187,23 @@ interface TodosFile {
   todos: TodoItem[];
 }
 
+interface NotesFile {
+  notes: NoteItem[];
+}
+
 export class AppStorage {
   private readonly rootDir = path.join(app.getPath("userData"), "data");
   private readonly settingsPath = path.join(this.rootDir, "settings.json");
   private readonly threadsPath = path.join(this.rootDir, "threads.json");
   private readonly todosPath = path.join(this.rootDir, "todos.json");
+  private readonly notesPath = path.join(this.rootDir, "notes.json");
 
   async init(): Promise<void> {
     await mkdir(this.rootDir, { recursive: true });
     await this.ensureFile(this.settingsPath, DEFAULT_SETTINGS);
     await this.ensureFile<ThreadsFile>(this.threadsPath, { threads: [] });
     await this.ensureFile<TodosFile>(this.todosPath, { todos: [] });
+    await this.ensureFile<NotesFile>(this.notesPath, { notes: [] });
   }
 
   async getSettings(): Promise<SettingsData> {
@@ -371,6 +378,45 @@ export class AppStorage {
     const nextTodos = file.todos.filter((t) => t.id !== id);
     if (nextTodos.length === file.todos.length) return false;
     await this.writeJson(this.todosPath, { todos: nextTodos });
+    return true;
+  }
+
+  async listNotes(): Promise<NoteItem[]> {
+    const file = await this.readJson<NotesFile>(this.notesPath, { notes: [] });
+    return file.notes.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async createNote(title: string): Promise<NoteItem> {
+    const file = await this.readJson<NotesFile>(this.notesPath, { notes: [] });
+    const now = new Date().toISOString();
+    const note: NoteItem = {
+      id: crypto.randomUUID(),
+      title: title || "Untitled",
+      content: "",
+      createdAt: now,
+      updatedAt: now
+    };
+    file.notes.push(note);
+    await this.writeJson(this.notesPath, file);
+    return note;
+  }
+
+  async updateNote(id: string, changes: Partial<Pick<NoteItem, "title" | "content">>): Promise<NoteItem | null> {
+    const file = await this.readJson<NotesFile>(this.notesPath, { notes: [] });
+    const note = file.notes.find((n) => n.id === id);
+    if (!note) return null;
+    if (changes.title !== undefined) note.title = changes.title;
+    if (changes.content !== undefined) note.content = changes.content;
+    note.updatedAt = new Date().toISOString();
+    await this.writeJson(this.notesPath, file);
+    return note;
+  }
+
+  async deleteNote(id: string): Promise<boolean> {
+    const file = await this.readJson<NotesFile>(this.notesPath, { notes: [] });
+    const nextNotes = file.notes.filter((n) => n.id !== id);
+    if (nextNotes.length === file.notes.length) return false;
+    await this.writeJson(this.notesPath, { notes: nextNotes });
     return true;
   }
 

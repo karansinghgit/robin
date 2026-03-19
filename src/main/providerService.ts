@@ -23,6 +23,7 @@ import { GoogleProvider } from "./providers/googleProvider";
 import { OpenRouterProvider } from "./providers/openrouterProvider";
 import { CURATED_CLOUD_MODELS } from "./providers/curatedCloudModels";
 import { TodoContextProvider } from "./context/todoProvider";
+import { NotesContextProvider } from "./context/notesProvider";
 import { buildSystemPrompt } from "./context/assembler";
 import os from "node:os";
 import { createHash } from "node:crypto";
@@ -92,6 +93,30 @@ function prepareMessagesForAPI(messages: ChatMessage[]): ChatMessage[] {
   });
 }
 
+interface TodoAction {
+  type: "create_todo" | "complete_todo" | "uncomplete_todo";
+  id?: string;
+  title?: string;
+}
+
+function parseActions(content: string): { cleanContent: string; actions: TodoAction[] } {
+  const actionBlocks = content.match(/<action>[\s\S]*?<\/action>/g) ?? [];
+  const actions: TodoAction[] = [];
+  for (const block of actionBlocks) {
+    const json = block.replace(/<\/?action>/g, "").trim();
+    try {
+      const parsed = JSON.parse(json) as TodoAction;
+      if (parsed.type === "create_todo" || parsed.type === "complete_todo" || parsed.type === "uncomplete_todo") {
+        actions.push(parsed);
+      }
+    } catch {
+      // ignore malformed blocks
+    }
+  }
+  const cleanContent = content.replace(/<action>[\s\S]*?<\/action>/g, "").trimEnd();
+  return { cleanContent, actions };
+}
+
 function truncateContext(messages: ChatMessage[], maxChars = 100_000): ChatMessage[] {
   let total = messages.reduce((sum, m) => sum + m.content.length, 0);
   const result = [...messages];
@@ -124,7 +149,10 @@ export class ProviderService {
   ) {}
 
   private get contextProviders() {
-    return [new TodoContextProvider(this.storage)];
+    return [
+      new TodoContextProvider(this.storage),
+      new NotesContextProvider(this.storage)
+    ];
   }
 
   private keyHash(value: string): string {
@@ -612,10 +640,28 @@ export class ProviderService {
         finalCitations = result.citations;
       }
 
+      // Parse and execute any action blocks the model appended
+      const { cleanContent, actions } = parseActions(assistantMessage.content);
+      assistantMessage.content = cleanContent;
+      for (const action of actions) {
+        if (action.type === "create_todo" && action.title) {
+          await this.storage.createTodo(action.title);
+        } else if (action.type === "complete_todo" && action.id) {
+          await this.storage.updateTodo(action.id, { completed: true });
+        } else if (action.type === "uncomplete_todo" && action.id) {
+          await this.storage.updateTodo(action.id, { completed: false });
+        }
+      }
+
       assistantMessage.status = "complete";
       assistantMessage.citations = finalCitations;
       thread.updatedAt = isoNow();
       await this.storage.upsertThread(thread);
+
+      if (actions.length > 0) {
+        const updatedTodos = await this.storage.listTodos();
+        emit({ streamId, type: "context_update", todos: updatedTodos });
+      }
 
       if (finalCitations.length > 0) {
         emit({

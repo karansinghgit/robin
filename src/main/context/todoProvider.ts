@@ -29,7 +29,7 @@ export class TodoContextProvider implements ContextProvider {
 
     const toDisplay = matched.length > 0 ? matched : todos;
     const lines = toDisplay
-      .map((t) => `- [${t.completed ? "x" : " "}] ${t.title}`)
+      .map((t) => `- [${t.completed ? "x" : " "}] ${t.title} (id:${t.id})`)
       .join("\n");
 
     return `## Your Todos\n${lines}`;

@@ -187,6 +187,11 @@ export type ChatStreamEvent =
       message: string;
       threadId?: string;
       messageId?: string;
+    }
+  | {
+      streamId: string;
+      type: "context_update";
+      todos: TodoItem[];
     };
 
 export interface TodoItem {
@@ -194,6 +199,14 @@ export interface TodoItem {
   title: string;
   completed: boolean;
   order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -217,6 +230,7 @@ export interface RobinBridge {
         onCitations: (event: Extract<ChatStreamEvent, { type: "citations" }>) => void;
         onDone: (event: Extract<ChatStreamEvent, { type: "done" }>) => void;
         onError: (event: Extract<ChatStreamEvent, { type: "error" }>) => void;
+        onContextUpdate: (event: Extract<ChatStreamEvent, { type: "context_update" }>) => void;
       }>
     ) => Promise<string>;
     listThreads: () => Promise<ThreadSummary[]>;
@@ -240,6 +254,12 @@ export interface RobinBridge {
     create: (title: string) => Promise<TodoItem>;
     update: (id: string, changes: Partial<Pick<TodoItem, "title" | "completed" | "order">>) => Promise<TodoItem | null>;
     reorder: (orderedIds: string[]) => Promise<TodoItem[]>;
+    delete: (id: string) => Promise<boolean>;
+  };
+  notes: {
+    list: () => Promise<NoteItem[]>;
+    create: (title: string) => Promise<NoteItem>;
+    update: (id: string, changes: Partial<Pick<NoteItem, "title" | "content">>) => Promise<NoteItem | null>;
     delete: (id: string) => Promise<boolean>;
   };
 }

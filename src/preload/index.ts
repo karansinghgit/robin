@@ -26,7 +26,11 @@ const CHANNELS = {
   todosCreate: "todos:create",
   todosUpdate: "todos:update",
   todosReorder: "todos:reorder",
-  todosDelete: "todos:delete"
+  todosDelete: "todos:delete",
+  notesList: "notes:list",
+  notesCreate: "notes:create",
+  notesUpdate: "notes:update",
+  notesDelete: "notes:delete"
 } as const;
 
 const activeStreamListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => void>();
@@ -80,6 +84,9 @@ const bridge: RobinBridge = {
           handlers.onError?.(payload);
           clearStreamListener(streamId);
         }
+        if (payload.type === "context_update") {
+          handlers.onContextUpdate?.(payload);
+        }
       };
 
       ipcRenderer.on(CHANNELS.streamEvent, listener);
@@ -124,6 +131,12 @@ const bridge: RobinBridge = {
     update: async (id: string, changes) => ipcRenderer.invoke(CHANNELS.todosUpdate, id, changes),
     reorder: async (orderedIds: string[]) => ipcRenderer.invoke(CHANNELS.todosReorder, orderedIds),
     delete: async (id: string) => ipcRenderer.invoke(CHANNELS.todosDelete, id)
+  },
+  notes: {
+    list: async () => ipcRenderer.invoke(CHANNELS.notesList),
+    create: async (title: string) => ipcRenderer.invoke(CHANNELS.notesCreate, title),
+    update: async (id: string, changes) => ipcRenderer.invoke(CHANNELS.notesUpdate, id, changes),
+    delete: async (id: string) => ipcRenderer.invoke(CHANNELS.notesDelete, id)
   }
 };
 

@@ -26,7 +26,7 @@ export class NotesContextProvider implements ContextProvider {
     const keywords = query
       .toLowerCase()
       .split(/\s+/)
-      .filter((w) => w.length > 2);
+      .filter((w) => w.length > 1);
 
     // Score each note by keyword hits in title + content
     const scored = notes.map((note) => {

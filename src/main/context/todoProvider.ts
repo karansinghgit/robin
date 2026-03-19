@@ -21,7 +21,7 @@ export class TodoContextProvider implements ContextProvider {
     const keywords = query
       .toLowerCase()
       .split(/\s+/)
-      .filter((w) => w.length > 2);
+      .filter((w) => w.length > 1);
 
     const matched = keywords.length > 0
       ? todos.filter((t) => keywords.some((kw) => t.title.toLowerCase().includes(kw)))

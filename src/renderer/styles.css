@@ -2194,3 +2194,16 @@ button:focus-visible {
   width: 100%;
 }
 .notes-content-area::placeholder { color: var(--text-dim); }
+
+/* ── Tool Status Bar ─────────────────────────────────── */
+.tool-status-bar {
+  font-size: 11px;
+  color: var(--accent);
+  padding: 6px 16px;
+  text-align: center;
+  animation: tool-pulse 1.5s ease-in-out infinite;
+}
+@keyframes tool-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}

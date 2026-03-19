@@ -674,6 +674,7 @@ export function App() {
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const [localModelNotice, setLocalModelNotice] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [toolStatus, setToolStatus] = useState<{ toolName: string; status: "calling" | "complete" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
   const [updatesChecking, setUpdatesChecking] = useState(false);
@@ -1199,7 +1200,7 @@ export function App() {
       clearTimeout(streamWatchdogRef.current);
       streamWatchdogRef.current = null;
     }
-    setIsStreaming(false);
+    setIsStreaming(false); setToolStatus(null);
     if (typeof nextError === "string") {
       setError(nextError);
     } else {
@@ -1696,12 +1697,19 @@ export function App() {
           onContextUpdate: ({ todos: updatedTodos }) => {
             setTodos(updatedTodos);
           },
+          onToolStatus: ({ toolName, status }) => {
+            if (status === "calling") {
+              setToolStatus({ toolName, status });
+            } else {
+              setToolStatus(null);
+            }
+          },
           onDone: ({ thread }) => {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
             flushPendingDeltas();
-            setIsStreaming(false);
+            setIsStreaming(false); setToolStatus(null);
             activeStreamIdRef.current = null;
             if (streamWatchdogRef.current) {
               clearTimeout(streamWatchdogRef.current);
@@ -1715,7 +1723,7 @@ export function App() {
               return;
             }
             flushPendingDeltas();
-            setIsStreaming(false);
+            setIsStreaming(false); setToolStatus(null);
             activeStreamIdRef.current = null;
             if (streamWatchdogRef.current) {
               clearTimeout(streamWatchdogRef.current);
@@ -1739,7 +1747,7 @@ export function App() {
         return;
       }
       flushPendingDeltas();
-      setIsStreaming(false);
+      setIsStreaming(false); setToolStatus(null);
       activeStreamIdRef.current = null;
       if (streamWatchdogRef.current) {
         clearTimeout(streamWatchdogRef.current);
@@ -2657,6 +2665,12 @@ export function App() {
                   </div>
                 )}
               </section>
+
+              {toolStatus && (
+                <div className="tool-status-bar">
+                  {toolStatus.toolName === "web_search" ? "Searching the web..." : toolStatus.toolName === "fetch_url" ? "Fetching page..." : `Using ${toolStatus.toolName}...`}
+                </div>
+              )}
 
               <form className="composer" onSubmit={handleComposerSubmit}>
                 <div className="composer-box">

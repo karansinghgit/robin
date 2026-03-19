@@ -252,6 +252,28 @@ export class OllamaProvider {
       throw new Error(formatReachabilityError(input.baseUrl));
     }
 
+    // If the request failed and we sent tools, retry without tools
+    // (many smaller models don't support function calling)
+    if ((!response || !response.ok || !response.body) && requestBody.tools) {
+      delete requestBody.tools;
+      response = null;
+      for (const candidate of buildBaseUrlCandidates(input.baseUrl)) {
+        try {
+          const nextResponse = await fetch(`${candidate}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody)
+          });
+          response = nextResponse;
+          if (response.ok && response.body) break;
+        } catch { continue; }
+      }
+    }
+
+    if (!response) {
+      throw new Error(formatReachabilityError(input.baseUrl));
+    }
+
     if (!response.ok || !response.body) {
       throw new Error("Ollama did not return a streaming response.");
     }

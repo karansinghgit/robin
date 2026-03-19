@@ -1801,6 +1801,16 @@ export function App() {
     : undefined;
   const isOpenAISelected = selectedCloudProvider === "openai";
   const isCloudProviderSelected = Boolean(selectedCloudProvider);
+
+  const modelCapabilities = (() => {
+    if (parsed.mode === "local") {
+      return { image: false, tools: false, search: false };
+    }
+    if (selectedCloudProvider === "perplexity") {
+      return { image: false, tools: false, search: true };
+    }
+    return { image: true, tools: true, search: false };
+  })();
   const selectedCloudProviderModels = selectedCloudProvider
     ? cloudModelsByProvider[selectedCloudProvider] ?? []
     : [];
@@ -2765,6 +2775,17 @@ export function App() {
                           onChange={setCloudModeDraft}
                         />
                       ) : null}
+                      <div className="capability-badges">
+                        <span className={`cap-badge${modelCapabilities.image ? " cap-active" : ""}`} title={modelCapabilities.image ? "Supports image input" : "No image support"}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                        </span>
+                        <span className={`cap-badge${modelCapabilities.tools ? " cap-active" : ""}`} title={modelCapabilities.tools ? "Supports tool calling (fetch URL, web search)" : "No tool support"}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                        </span>
+                        <span className={`cap-badge${modelCapabilities.search ? " cap-active" : ""}`} title={modelCapabilities.search ? "Built-in web search" : "No built-in search"}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        </span>
+                      </div>
                       <button
                         type={isStreaming ? "button" : "submit"}
                         className={`send-btn${isStreaming ? " send-btn-stop" : ""}`}

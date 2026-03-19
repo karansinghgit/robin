@@ -114,6 +114,8 @@ export interface ProviderStatus {
     preset: string;
   };
   ollama: OllamaStatus;
+  braveSearchKeyConfigured: boolean;
+  toolToggles: { fetchUrl: boolean; webSearch: boolean };
 }
 
 export interface CloudModelCatalogItem {
@@ -152,6 +154,8 @@ export interface SaveConfigInput {
   activeCloudProvider?: CloudProviderId;
   providerApiKeys?: Partial<Record<CloudProviderId, string>>;
   selectedCloudModels?: Partial<Record<CloudProviderId, string[]>>;
+  braveSearchApiKey?: string;
+  toolToggles?: { fetchUrl?: boolean; webSearch?: boolean };
 }
 
 export type ChatStreamEvent =

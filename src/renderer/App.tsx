@@ -652,6 +652,9 @@ export function App() {
   const [shortcutDraft, setShortcutDraft] = useState("CommandOrControl+Shift+Space");
   const [activeModelDraft, setActiveModelDraft] = useState(modelKey("search", ""));
   const [providerKeyDrafts, setProviderKeyDrafts] = useState<Record<CloudProviderId, string>>(() => buildProviderDrafts());
+  const [braveSearchKeyDraft, setBraveSearchKeyDraft] = useState("");
+  const [toolFetchUrlEnabled, setToolFetchUrlEnabled] = useState(true);
+  const [toolWebSearchEnabled, setToolWebSearchEnabled] = useState(true);
   const [selectedCloudModelsDraft, setSelectedCloudModelsDraft] = useState<Record<CloudProviderId, string[]>>(() => normalizeSelectedCloudModels());
   const [openRouterModelDraft, setOpenRouterModelDraft] = useState("");
   const [customLocalModelDraft, setCustomLocalModelDraft] = useState("");
@@ -825,6 +828,8 @@ export function App() {
     setSelectedCloudModelsDraft(nextStatus.selectedCloudModels);
     setOllamaStatus(nextOllamaStatus);
     setShortcutDraft(nextStatus.shortcut);
+    setToolFetchUrlEnabled(nextStatus.toolToggles.fetchUrl);
+    setToolWebSearchEnabled(nextStatus.toolToggles.webSearch);
     setSettingsMode(nextStatus.preferredMode === "local" ? "local" : "cloud");
     const hasActiveCloudKey = Boolean(nextStatus.cloudProviderKeys?.[nextStatus.activeCloudProvider]);
     setActiveModelDraft(
@@ -1191,6 +1196,14 @@ export function App() {
     pendingDeltasRef.current.clear();
   }, []);
 
+  useEffect(() => {
+    if (!activeNoteId) return;
+    const timer = setTimeout(() => {
+      void saveNote(activeNoteId, noteTitleDraft, noteContentDraft);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [activeNoteId, noteTitleDraft, noteContentDraft]);
+
   async function stopPendingResponse(nextError?: string, refreshAfterStop = true) {
     streamSequenceRef.current += 1;
     const activeStreamId = activeStreamIdRef.current;
@@ -1353,6 +1366,15 @@ export function App() {
         [providerId]: providerKeyDrafts[providerId]
       }
     });
+  }
+
+  async function saveBraveSearchKey() {
+    await persistConfig({ braveSearchApiKey: braveSearchKeyDraft });
+    setBraveSearchKeyDraft(""); // Clear after save since we don't show the actual key
+  }
+
+  async function saveToolToggles(patch: { fetchUrl?: boolean; webSearch?: boolean }) {
+    await persistConfig({ toolToggles: patch });
   }
 
   async function toggleSelectedCloudModel(providerId: CloudProviderId, modelId: string) {
@@ -1783,6 +1805,7 @@ export function App() {
   }
 
   async function deleteThread(id: string) {
+    if (!confirm("Delete this conversation?")) return;
     try {
       setError(null);
       await getRobinBridge().chat.deleteThread(id);
@@ -1990,9 +2013,6 @@ export function App() {
                   onClick={() => { void selectThread(thread.id); setSidebarTab("chats"); setScreen("chat"); }}
                   onContextMenu={(event) => {
                     event.preventDefault();
-                    if (!window.confirm("Delete this chat?")) {
-                      return;
-                    }
                     void deleteThread(thread.id);
                   }}
                 >
@@ -2110,6 +2130,45 @@ export function App() {
                                 </article>
                               );
                             })}
+                          </div>
+
+                          <p className="setting-title" style={{ marginTop: 20 }}>Tools</p>
+                          <div className="provider-list">
+                            <article className="provider-row">
+                              <div className="provider-row-label">
+                                <p className="provider-name">Brave Search</p>
+                              </div>
+                              <input
+                                className="field-input provider-key-input"
+                                type="text"
+                                placeholder={status?.braveSearchKeyConfigured ? "Key configured ✓" : "API key for web search"}
+                                value={braveSearchKeyDraft}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                onChange={(e) => setBraveSearchKeyDraft(e.target.value)}
+                                onBlur={() => { if (braveSearchKeyDraft.trim()) void saveBraveSearchKey(); }}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (braveSearchKeyDraft.trim()) void saveBraveSearchKey(); } }}
+                              />
+                            </article>
+                            <article className="provider-row">
+                              <div className="provider-row-label">
+                                <p className="provider-name">Fetch URL</p>
+                              </div>
+                              <label className="toggle-switch">
+                                <input type="checkbox" checked={toolFetchUrlEnabled} onChange={(e) => { setToolFetchUrlEnabled(e.target.checked); void saveToolToggles({ fetchUrl: e.target.checked }); }} />
+                                <span className="toggle-slider" />
+                              </label>
+                            </article>
+                            <article className="provider-row">
+                              <div className="provider-row-label">
+                                <p className="provider-name">Web Search</p>
+                              </div>
+                              <label className="toggle-switch">
+                                <input type="checkbox" checked={toolWebSearchEnabled} onChange={(e) => { setToolWebSearchEnabled(e.target.checked); void saveToolToggles({ webSearch: e.target.checked }); }} />
+                                <span className="toggle-slider" />
+                              </label>
+                            </article>
                           </div>
 
                           <div className="settings-cloud-models-panel">

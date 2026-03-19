@@ -31,6 +31,10 @@ export interface SettingsData {
       model: string;
     };
   };
+  toolToggles: {
+    fetchUrl: boolean;
+    webSearch: boolean;
+  };
 }
 
 type LegacySettingsShape = {
@@ -62,6 +66,10 @@ const DEFAULT_SETTINGS: SettingsData = {
       baseUrl: "http://localhost:11434",
       model: ""
     }
+  },
+  toolToggles: {
+    fetchUrl: true,
+    webSearch: true
   }
 };
 
@@ -175,6 +183,10 @@ function normalizeSettings(raw: unknown): SettingsData {
             ? source.ollamaModel
           : DEFAULT_SETTINGS.providers.ollama.model
       }
+    },
+    toolToggles: {
+      fetchUrl: (source as Partial<SettingsData>).toolToggles?.fetchUrl !== false,
+      webSearch: (source as Partial<SettingsData>).toolToggles?.webSearch !== false
     }
   };
 }

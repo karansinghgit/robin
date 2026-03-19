@@ -6,10 +6,17 @@ import { createWebSearchTool } from "./webSearch";
  * Build the list of active tool executors based on available API keys.
  * Tools whose prerequisites are not met are silently excluded.
  */
-export function buildToolExecutors(braveApiKey?: string | null): ToolExecutor[] {
-  const tools: ToolExecutor[] = [fetchUrlTool];
+export function buildToolExecutors(
+  braveApiKey?: string | null,
+  toggles?: { fetchUrl?: boolean; webSearch?: boolean }
+): ToolExecutor[] {
+  const tools: ToolExecutor[] = [];
 
-  if (braveApiKey) {
+  if (toggles?.fetchUrl !== false) {
+    tools.push(fetchUrlTool);
+  }
+
+  if (toggles?.webSearch !== false && braveApiKey) {
     tools.push(createWebSearchTool(braveApiKey));
   }
 

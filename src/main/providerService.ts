@@ -295,13 +295,22 @@ export class ProviderService {
         model: providers.perplexity.model,
         preset: providers.perplexity.preset
       },
-      ollama
+      ollama,
+      braveSearchKeyConfigured: Boolean(await this.secureConfig.getToolApiKey("brave")),
+      toolToggles: settings.toolToggles
     };
   }
 
   async saveConfig(config: SaveConfigInput): Promise<ProviderStatus> {
     if (config.perplexityApiKey) {
       await this.secureConfig.setProviderApiKey("perplexity", config.perplexityApiKey);
+    }
+
+    if (typeof config.braveSearchApiKey === "string") {
+      const normalized = config.braveSearchApiKey.trim();
+      if (normalized) {
+        await this.secureConfig.setToolApiKey("brave", normalized);
+      }
     }
 
     if (config.providerApiKeys) {
@@ -373,6 +382,10 @@ export class ProviderService {
           baseUrl: config.ollamaBaseUrl ?? current.providers.ollama.baseUrl,
           model: config.ollamaModel ?? current.providers.ollama.model
         }
+      },
+      toolToggles: {
+        fetchUrl: config.toolToggles?.fetchUrl ?? current.toolToggles.fetchUrl,
+        webSearch: config.toolToggles?.webSearch ?? current.toolToggles.webSearch
       }
     }));
 
@@ -484,7 +497,8 @@ export class ProviderService {
     let finalCitations: Citation[] = [];
     const systemPrompt = await buildSystemPrompt(this.contextProviders, request.prompt);
     const braveApiKey = await this.secureConfig.getToolApiKey("brave");
-    const toolExecutors = buildToolExecutors(braveApiKey);
+    const toolToggles = (await this.storage.getSettings()).toolToggles;
+    const toolExecutors = buildToolExecutors(braveApiKey, toolToggles);
     const toolDefs = getToolDefinitions(toolExecutors);
 
     const onDelta = (delta: string) => {

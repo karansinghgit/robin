@@ -642,7 +642,18 @@ export class ProviderService {
 
       // Parse and execute any action blocks the model appended
       const { cleanContent, actions } = parseActions(assistantMessage.content);
-      assistantMessage.content = cleanContent;
+      if (actions.length > 0 && !cleanContent) {
+        // Model output only action blocks with no text — synthesise a confirmation
+        const summaries = actions.map((a) => {
+          if (a.type === "create_todo") return `Created todo: "${a.title}"`;
+          if (a.type === "complete_todo") return "Marked todo as done.";
+          if (a.type === "uncomplete_todo") return "Marked todo as not done.";
+          return "Done.";
+        });
+        assistantMessage.content = summaries.join(" ");
+      } else {
+        assistantMessage.content = cleanContent;
+      }
       for (const action of actions) {
         if (action.type === "create_todo" && action.title) {
           await this.storage.createTodo(action.title);

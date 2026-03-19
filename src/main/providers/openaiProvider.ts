@@ -141,6 +141,7 @@ export class OpenAIProvider {
     model: string;
     mode?: string;
     messages: ChatMessage[];
+    systemPrompt?: string;
     onDelta: (delta: string) => void;
   }): Promise<void> {
     const client = new OpenAI({ apiKey: input.apiKey });
@@ -149,7 +150,8 @@ export class OpenAIProvider {
       model: input.model,
       input: responseInput,
       stream: true,
-      reasoning: input.mode ? { effort: input.mode } : undefined
+      reasoning: input.mode ? { effort: input.mode } : undefined,
+      instructions: input.systemPrompt || undefined
     });
 
     for await (const event of stream) {

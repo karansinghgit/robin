@@ -22,6 +22,8 @@ import { PerplexityProvider } from "./providers/perplexityProvider";
 import { GoogleProvider } from "./providers/googleProvider";
 import { OpenRouterProvider } from "./providers/openrouterProvider";
 import { CURATED_CLOUD_MODELS } from "./providers/curatedCloudModels";
+import { TodoContextProvider } from "./context/todoProvider";
+import { buildSystemPrompt } from "./context/assembler";
 import os from "node:os";
 import { createHash } from "node:crypto";
 
@@ -120,6 +122,10 @@ export class ProviderService {
     private readonly storage: AppStorage,
     private readonly secureConfig: SecureConfig
   ) {}
+
+  private get contextProviders() {
+    return [new TodoContextProvider(this.storage)];
+  }
 
   private keyHash(value: string): string {
     return createHash("sha256").update(value).digest("hex");
@@ -444,6 +450,7 @@ export class ProviderService {
     });
 
     let finalCitations: Citation[] = [];
+    const systemPrompt = await buildSystemPrompt(this.contextProviders, request.prompt);
 
     try {
       if (request.mode === "search") {
@@ -466,6 +473,7 @@ export class ProviderService {
             model: request.cloudModel?.trim() || preferredSelectedOpenAIModel || "gpt-5-mini",
             mode: request.cloudMode?.trim() || undefined,
             messages: streamMessages,
+            systemPrompt: systemPrompt || undefined,
             onDelta: (delta) => {
               assistantMessage.content += delta;
               emit({
@@ -489,6 +497,7 @@ export class ProviderService {
             model: request.cloudModel?.trim() || preferredSelectedPerplexityModel || providers.perplexity.model,
             preset: providers.perplexity.preset,
             messages: streamMessages,
+            systemPrompt: systemPrompt || undefined,
             onDelta: (delta) => {
               assistantMessage.content += delta;
               emit({
@@ -512,6 +521,7 @@ export class ProviderService {
             apiKey,
             model: request.cloudModel?.trim() || preferredSelectedGoogleModel || "gemini-2.5-flash",
             messages: streamMessages,
+            systemPrompt: systemPrompt || undefined,
             onDelta: (delta) => {
               assistantMessage.content += delta;
               emit({
@@ -540,6 +550,7 @@ export class ProviderService {
             apiKey,
             model,
             messages: streamMessages,
+            systemPrompt: systemPrompt || undefined,
             onDelta: (delta) => {
               assistantMessage.content += delta;
               emit({
@@ -586,6 +597,7 @@ export class ProviderService {
           messages: truncateContext(
             thread.messages.filter((message) => message.id !== assistantMessage.id)
           ),
+          systemPrompt: systemPrompt || undefined,
           onDelta: (delta) => {
             assistantMessage.content += delta;
             emit({

@@ -169,6 +169,7 @@ export class OpenRouterProvider {
     apiKey: string;
     model: string;
     messages: ChatMessage[];
+    systemPrompt?: string;
     onDelta: (delta: string) => void;
   }): Promise<void> {
     const model = input.model.trim();
@@ -183,12 +184,16 @@ export class OpenRouterProvider {
       throw new Error("Selected model does not support image input. Use a model with image input support.");
     }
 
-    const messages = toOpenRouterMessages(input.messages);
-    if (messages.length === 0) {
+    const userMessages = toOpenRouterMessages(input.messages);
+    if (userMessages.length === 0) {
       throw new Error("Add a message first.");
     }
 
-    const hasImages = messages.some((m) =>
+    const messages: Array<{ role: string; content: string | OpenRouterContentPart[] }> = input.systemPrompt
+      ? [{ role: "system", content: input.systemPrompt }, ...userMessages]
+      : userMessages;
+
+    const hasImages = userMessages.some((m) =>
       Array.isArray(m.content) && m.content.some((p) => p.type === "image_url")
     );
     const bodyStr = JSON.stringify({ model, messages, stream: true });

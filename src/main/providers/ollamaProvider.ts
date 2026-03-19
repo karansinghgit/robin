@@ -187,8 +187,17 @@ export class OllamaProvider {
     baseUrl: string;
     model: string;
     messages: ChatMessage[];
+    systemPrompt?: string;
     onDelta: (delta: string) => void;
   }): Promise<{ citations: Citation[] }> {
+    const ollamaMessages: Array<{ role: string; content: string }> = [];
+    if (input.systemPrompt) {
+      ollamaMessages.push({ role: "system", content: input.systemPrompt });
+    }
+    for (const message of input.messages) {
+      ollamaMessages.push({ role: message.role, content: message.content });
+    }
+
     let response: Response | null = null;
     for (const candidate of buildBaseUrlCandidates(input.baseUrl)) {
       try {
@@ -199,10 +208,7 @@ export class OllamaProvider {
           },
           body: JSON.stringify({
             model: input.model,
-            messages: input.messages.map((message) => ({
-              role: message.role,
-              content: message.content
-            })),
+            messages: ollamaMessages,
             stream: true
           })
         });

@@ -107,6 +107,7 @@ export class GoogleProvider {
     apiKey: string;
     model: string;
     messages: ChatMessage[];
+    systemPrompt?: string;
     onDelta: (delta: string) => void;
   }): Promise<void> {
     const rawModelId = input.model.startsWith("models/") ? input.model.slice("models/".length) : input.model;
@@ -119,14 +120,16 @@ export class GoogleProvider {
     if (contents.length === 0) {
       throw new Error("Add a message or image first.");
     }
+    const body: Record<string, unknown> = { contents };
+    if (input.systemPrompt) {
+      body.systemInstruction = { parts: [{ text: input.systemPrompt }] };
+    }
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        contents
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {

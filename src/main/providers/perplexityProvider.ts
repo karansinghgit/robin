@@ -53,6 +53,7 @@ export class PerplexityProvider {
     model: string;
     preset: string;
     messages: ChatMessage[];
+    systemPrompt?: string;
     onDelta: (delta: string) => void;
   }): Promise<{ citations: Citation[] }> {
     const client = new OpenAI({
@@ -64,6 +65,7 @@ export class PerplexityProvider {
       model: input.model,
       input: buildTranscript(input.messages),
       stream: true,
+      instructions: input.systemPrompt || undefined,
       extra_body: {
         preset: input.preset,
         tools: [{ type: "web_search" }]

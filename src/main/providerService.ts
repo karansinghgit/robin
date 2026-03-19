@@ -25,8 +25,12 @@ import { CURATED_CLOUD_MODELS } from "./providers/curatedCloudModels";
 import { TodoContextProvider } from "./context/todoProvider";
 import { NotesContextProvider } from "./context/notesProvider";
 import { buildSystemPrompt } from "./context/assembler";
+import { ToolRound, StreamReplyResult, ToolExecutor } from "./tools/types";
+import { buildToolExecutors, getToolDefinitions, executeToolCalls } from "./tools/registry";
 import os from "node:os";
 import { createHash } from "node:crypto";
+
+const MAX_TOOL_ROUNDS = 5;
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -479,6 +483,35 @@ export class ProviderService {
 
     let finalCitations: Citation[] = [];
     const systemPrompt = await buildSystemPrompt(this.contextProviders, request.prompt);
+    const braveApiKey = await this.secureConfig.getToolApiKey("brave");
+    const toolExecutors = buildToolExecutors(braveApiKey);
+    const toolDefs = getToolDefinitions(toolExecutors);
+
+    const onDelta = (delta: string) => {
+      assistantMessage.content += delta;
+      emit({ streamId, type: "delta", threadId: thread.id, messageId: assistantMessage.id, delta });
+    };
+
+    const emitToolStatus = (toolName: string, status: "calling" | "complete") => {
+      emit({ streamId, type: "tool_status", threadId: thread.id, messageId: assistantMessage.id, toolName, status });
+    };
+
+    const runToolLoop = async (
+      callProvider: (toolHistory: ToolRound[]) => Promise<StreamReplyResult>
+    ): Promise<{ citations: Citation[] }> => {
+      const toolHistory: ToolRound[] = [];
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        const result = await callProvider(toolHistory);
+        if (result.toolCalls.length === 0) {
+          return { citations: result.citations };
+        }
+        for (const tc of result.toolCalls) emitToolStatus(tc.name, "calling");
+        const results = await executeToolCalls(toolExecutors, result.toolCalls);
+        for (const tc of result.toolCalls) emitToolStatus(tc.name, "complete");
+        toolHistory.push({ calls: result.toolCalls, results });
+      }
+      return { citations: [] };
+    };
 
     try {
       if (request.mode === "search") {
@@ -491,34 +524,24 @@ export class ProviderService {
 
         if (requestedCloudProvider === "openai") {
           const apiKey = await this.secureConfig.getProviderApiKey("openai");
-          if (!apiKey) {
-            throw new Error(MODEL_SETUP_WARNING);
-          }
-
+          if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
           const preferredSelectedOpenAIModel = providers.cloud.selectedModels.openai?.[0];
-          await this.openai.streamReply({
-            apiKey,
-            model: request.cloudModel?.trim() || preferredSelectedOpenAIModel || "gpt-5-mini",
-            mode: request.cloudMode?.trim() || undefined,
-            messages: streamMessages,
-            systemPrompt: systemPrompt || undefined,
-            onDelta: (delta) => {
-              assistantMessage.content += delta;
-              emit({
-                streamId,
-                type: "delta",
-                threadId: thread.id,
-                messageId: assistantMessage.id,
-                delta
-              });
-            }
-          });
-          finalCitations = [];
+          const { citations } = await runToolLoop((toolHistory) =>
+            this.openai.streamReply({
+              apiKey,
+              model: request.cloudModel?.trim() || preferredSelectedOpenAIModel || "gpt-5-mini",
+              mode: request.cloudMode?.trim() || undefined,
+              messages: streamMessages,
+              systemPrompt: systemPrompt || undefined,
+              tools: toolDefs.length > 0 ? toolDefs : undefined,
+              toolHistory: toolHistory.length > 0 ? toolHistory : undefined,
+              onDelta
+            })
+          );
+          finalCitations = citations;
         } else if (requestedCloudProvider === "perplexity") {
           const apiKey = await this.secureConfig.getProviderApiKey("perplexity");
-          if (!apiKey) {
-            throw new Error(MODEL_SETUP_WARNING);
-          }
+          if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
           const preferredSelectedPerplexityModel = providers.cloud.selectedModels.perplexity?.[0];
           const result = await this.perplexity.streamReply({
             apiKey,
@@ -526,71 +549,43 @@ export class ProviderService {
             preset: providers.perplexity.preset,
             messages: streamMessages,
             systemPrompt: systemPrompt || undefined,
-            onDelta: (delta) => {
-              assistantMessage.content += delta;
-              emit({
-                streamId,
-                type: "delta",
-                threadId: thread.id,
-                messageId: assistantMessage.id,
-                delta
-              });
-            }
+            onDelta
           });
           finalCitations = result.citations;
         } else if (requestedCloudProvider === "google") {
           const apiKey = await this.secureConfig.getProviderApiKey("google");
-          if (!apiKey) {
-            throw new Error(MODEL_SETUP_WARNING);
-          }
-
+          if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
           const preferredSelectedGoogleModel = providers.cloud.selectedModels.google?.[0];
-          await this.google.streamReply({
-            apiKey,
-            model: request.cloudModel?.trim() || preferredSelectedGoogleModel || "gemini-2.5-flash",
-            messages: streamMessages,
-            systemPrompt: systemPrompt || undefined,
-            onDelta: (delta) => {
-              assistantMessage.content += delta;
-              emit({
-                streamId,
-                type: "delta",
-                threadId: thread.id,
-                messageId: assistantMessage.id,
-                delta
-              });
-            }
-          });
-          finalCitations = [];
+          const { citations } = await runToolLoop((toolHistory) =>
+            this.google.streamReply({
+              apiKey,
+              model: request.cloudModel?.trim() || preferredSelectedGoogleModel || "gemini-2.5-flash",
+              messages: streamMessages,
+              systemPrompt: systemPrompt || undefined,
+              tools: toolDefs.length > 0 ? toolDefs : undefined,
+              toolHistory: toolHistory.length > 0 ? toolHistory : undefined,
+              onDelta
+            })
+          );
+          finalCitations = citations;
         } else if (requestedCloudProvider === "openrouter") {
           const apiKey = await this.secureConfig.getProviderApiKey("openrouter");
-          if (!apiKey) {
-            throw new Error(MODEL_SETUP_WARNING);
-          }
-
+          if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
           const preferredSelectedOpenRouterModel = providers.cloud.selectedModels.openrouter?.[0];
           const model = request.cloudModel?.trim() || preferredSelectedOpenRouterModel;
-          if (!model) {
-            throw new Error("Add an OpenRouter model ID in Settings first.");
-          }
-
-          await this.openrouter.streamReply({
-            apiKey,
-            model,
-            messages: streamMessages,
-            systemPrompt: systemPrompt || undefined,
-            onDelta: (delta) => {
-              assistantMessage.content += delta;
-              emit({
-                streamId,
-                type: "delta",
-                threadId: thread.id,
-                messageId: assistantMessage.id,
-                delta
-              });
-            }
-          });
-          finalCitations = [];
+          if (!model) throw new Error("Add an OpenRouter model ID in Settings first.");
+          const { citations } = await runToolLoop((toolHistory) =>
+            this.openrouter.streamReply({
+              apiKey,
+              model,
+              messages: streamMessages,
+              systemPrompt: systemPrompt || undefined,
+              tools: toolDefs.length > 0 ? toolDefs : undefined,
+              toolHistory: toolHistory.length > 0 ? toolHistory : undefined,
+              onDelta
+            })
+          );
+          finalCitations = citations;
         } else {
           throw new Error(MODEL_SETUP_WARNING);
         }
@@ -602,42 +597,28 @@ export class ProviderService {
           providers.ollama.baseUrl,
           providers.ollama.model || undefined
         );
-        if (ollamaStatus.state === "not_installed") {
-          throw new Error("Ollama is not installed yet.");
-        }
-        if (ollamaStatus.state === "not_running") {
-          throw new Error("Ollama is installed but not running.");
-        }
-        if (ollamaStatus.state === "no_model" || !ollamaStatus.selectedModel) {
-          throw new Error("Download an Ollama model before using Local mode.");
-        }
+        if (ollamaStatus.state === "not_installed") throw new Error("Ollama is not installed yet.");
+        if (ollamaStatus.state === "not_running") throw new Error("Ollama is installed but not running.");
+        if (ollamaStatus.state === "no_model" || !ollamaStatus.selectedModel) throw new Error("Download an Ollama model before using Local mode.");
         const preferredLocalModel = providers.ollama.model?.trim();
         const resolvedLocalModel = preferredLocalModel && ollamaStatus.models.includes(preferredLocalModel)
           ? preferredLocalModel
           : ollamaStatus.selectedModel;
-
-        if (!resolvedLocalModel) {
-          throw new Error("Download an Ollama model before using Local mode.");
-        }
-        const result = await this.ollama.streamReply({
-          baseUrl: providers.ollama.baseUrl,
-          model: resolvedLocalModel,
-          messages: truncateContext(
-            thread.messages.filter((message) => message.id !== assistantMessage.id)
-          ),
-          systemPrompt: systemPrompt || undefined,
-          onDelta: (delta) => {
-            assistantMessage.content += delta;
-            emit({
-              streamId,
-              type: "delta",
-              threadId: thread.id,
-              messageId: assistantMessage.id,
-              delta
-            });
-          }
-        });
-        finalCitations = result.citations;
+        if (!resolvedLocalModel) throw new Error("Download an Ollama model before using Local mode.");
+        const { citations } = await runToolLoop((toolHistory) =>
+          this.ollama.streamReply({
+            baseUrl: providers.ollama.baseUrl,
+            model: resolvedLocalModel,
+            messages: truncateContext(
+              thread.messages.filter((message) => message.id !== assistantMessage.id)
+            ),
+            systemPrompt: systemPrompt || undefined,
+            tools: toolDefs.length > 0 ? toolDefs : undefined,
+            toolHistory: toolHistory.length > 0 ? toolHistory : undefined,
+            onDelta
+          })
+        );
+        finalCitations = citations;
       }
 
       // Parse and execute any action blocks the model appended

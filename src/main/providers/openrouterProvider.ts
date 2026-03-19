@@ -1,12 +1,19 @@
 import { ChatAttachment, ChatMessage } from "../../shared/contracts";
+import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
 
 type OpenRouterContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
 interface OpenRouterMessage {
-  role: "user" | "assistant";
-  content: string | OpenRouterContentPart[];
+  role: "user" | "assistant" | "system" | "tool";
+  content: string | OpenRouterContentPart[] | null;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
 }
 
 interface OpenRouterModelDataEntry {
@@ -170,8 +177,10 @@ export class OpenRouterProvider {
     model: string;
     messages: ChatMessage[];
     systemPrompt?: string;
+    tools?: ToolDefinition[];
+    toolHistory?: ToolRound[];
     onDelta: (delta: string) => void;
-  }): Promise<void> {
+  }): Promise<StreamReplyResult> {
     const model = input.model.trim();
     if (!model) {
       throw new Error("Pick an OpenRouter model first.");
@@ -189,14 +198,45 @@ export class OpenRouterProvider {
       throw new Error("Add a message first.");
     }
 
-    const messages: Array<{ role: string; content: string | OpenRouterContentPart[] }> = input.systemPrompt
+    const messages: OpenRouterMessage[] = input.systemPrompt
       ? [{ role: "system", content: input.systemPrompt }, ...userMessages]
       : userMessages;
+
+    // For each tool round, append:
+    // - assistant message with tool_calls
+    // - tool result messages
+    for (const round of input.toolHistory ?? []) {
+      messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: round.calls.map((c) => ({
+          id: c.id,
+          type: "function" as const,
+          function: { name: c.name, arguments: c.arguments }
+        }))
+      });
+      for (const result of round.results) {
+        messages.push({
+          role: "tool",
+          content: result.content,
+          tool_call_id: result.callId
+        });
+      }
+    }
 
     const hasImages = userMessages.some((m) =>
       Array.isArray(m.content) && m.content.some((p) => p.type === "image_url")
     );
-    const bodyStr = JSON.stringify({ model, messages, stream: true });
+
+    const body: Record<string, unknown> = { model, messages, stream: true };
+    if (input.tools?.length) {
+      body.tools = input.tools.map((t) => ({
+        type: "function",
+        function: { name: t.name, description: t.description, parameters: t.parameters }
+      }));
+    }
+    const bodyStr = JSON.stringify(body);
+
     console.log(`[OpenRouter] sending ${bodyStr.length} bytes, hasImages=${hasImages}, msgCount=${messages.length}`);
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -229,6 +269,7 @@ export class OpenRouterProvider {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    const accumulatedToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -254,16 +295,45 @@ export class OpenRouterProvider {
 
         try {
           const parsed = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: unknown } }>;
+            choices?: Array<{
+              delta?: {
+                content?: unknown;
+                tool_calls?: Array<{
+                  index?: number;
+                  id?: string;
+                  function?: { name?: string; arguments?: string };
+                }>;
+              };
+            }>;
           };
           const delta = contentDeltaToText(parsed.choices?.[0]?.delta?.content);
           if (delta) {
             input.onDelta(delta);
+          }
+
+          const toolCallDeltas = parsed.choices?.[0]?.delta?.tool_calls;
+          if (Array.isArray(toolCallDeltas)) {
+            for (const tc of toolCallDeltas) {
+              const idx = typeof tc.index === "number" ? tc.index : 0;
+              if (!accumulatedToolCalls.has(idx)) {
+                accumulatedToolCalls.set(idx, { id: tc.id || "", name: "", arguments: "" });
+              }
+              const acc = accumulatedToolCalls.get(idx)!;
+              if (tc.id) acc.id = tc.id;
+              if (tc.function?.name) acc.name = tc.function.name;
+              if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+            }
           }
         } catch {
           // Ignore malformed chunks and continue streaming.
         }
       }
     }
+
+    const toolCalls: ToolCall[] = Array.from(accumulatedToolCalls.values())
+      .filter((tc) => tc.name)
+      .map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
+
+    return { citations: [], toolCalls };
   }
 }

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { ChatMessage, CloudModelCatalogItem } from "../../shared/contracts";
+import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
 
 function buildResponsesInput(messages: ChatMessage[]): Array<{
   role: "user" | "assistant";
@@ -142,22 +143,71 @@ export class OpenAIProvider {
     mode?: string;
     messages: ChatMessage[];
     systemPrompt?: string;
+    tools?: ToolDefinition[];
+    toolHistory?: ToolRound[];
     onDelta: (delta: string) => void;
-  }): Promise<void> {
+  }): Promise<StreamReplyResult> {
     const client = new OpenAI({ apiKey: input.apiKey });
     const responseInput = buildResponsesInput(input.messages);
-    const stream = await (client.responses.create as any)({
+
+    for (const round of input.toolHistory ?? []) {
+      for (const call of round.calls) {
+        responseInput.push({
+          type: "function_call",
+          call_id: call.id,
+          name: call.name,
+          arguments: call.arguments
+        } as any);
+      }
+      for (const result of round.results) {
+        responseInput.push({
+          type: "function_call_output",
+          call_id: result.callId,
+          output: result.content
+        } as any);
+      }
+    }
+
+    const createParams: Record<string, unknown> = {
       model: input.model,
       input: responseInput,
       stream: true,
       reasoning: input.mode ? { effort: input.mode } : undefined,
       instructions: input.systemPrompt || undefined
-    });
+    };
+    if (input.tools?.length) {
+      createParams.tools = input.tools.map((t) => ({
+        type: "function",
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters
+      }));
+    }
+    const stream = await (client.responses.create as any)(createParams);
+
+    const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
 
     for await (const event of stream) {
       if (event?.type === "response.output_text.delta" && event.delta) {
         input.onDelta(event.delta);
       }
+      if (event?.type === "response.output_item.added" && event.item?.type === "function_call") {
+        pendingToolCalls.set(event.output_index, {
+          id: event.item.call_id || "",
+          name: event.item.name || "",
+          arguments: ""
+        });
+      }
+      if (event?.type === "response.function_call_arguments.delta") {
+        const tc = pendingToolCalls.get(event.output_index);
+        if (tc) tc.arguments += event.delta;
+      }
     }
+
+    const toolCalls: ToolCall[] = Array.from(pendingToolCalls.values())
+      .filter((tc) => tc.name)
+      .map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.arguments }));
+
+    return { citations: [], toolCalls };
   }
 }

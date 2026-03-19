@@ -5,11 +5,13 @@ import { CLOUD_PROVIDER_IDS, CloudProviderId } from "../shared/contracts";
 
 interface SecretFile {
   providerApiKeys?: Partial<Record<CloudProviderId, string>>;
+  toolApiKeys?: Record<string, string>;
   perplexityApiKey?: string;
 }
 
 interface NormalizedSecretFile {
   providerApiKeys: Partial<Record<CloudProviderId, string>>;
+  toolApiKeys: Record<string, string>;
 }
 
 export class SecureConfig {
@@ -21,7 +23,7 @@ export class SecureConfig {
     try {
       await readFile(this.filePath, "utf8");
     } catch {
-      await this.writeSecrets({ providerApiKeys: {} });
+      await this.writeSecrets({ providerApiKeys: {}, toolApiKeys: {} });
     }
   }
 
@@ -102,6 +104,22 @@ export class SecureConfig {
     }, {} as Record<CloudProviderId, string>);
   }
 
+  async getToolApiKey(name: string): Promise<string | null> {
+    const secrets = await this.readSecrets();
+    const encoded = secrets.toolApiKeys[name];
+    if (!encoded) return null;
+    this.assertEncryption();
+    const decrypted = safeStorage.decryptString(Buffer.from(encoded, "base64"));
+    return decrypted.trim() || null;
+  }
+
+  async setToolApiKey(name: string, key: string): Promise<void> {
+    this.assertEncryption();
+    const secrets = await this.readSecrets();
+    secrets.toolApiKeys[name] = safeStorage.encryptString(key.trim()).toString("base64");
+    await this.writeSecrets(secrets);
+  }
+
   private normalizeSecrets(raw: SecretFile): NormalizedSecretFile {
     const providerApiKeys: Partial<Record<CloudProviderId, string>> = {
       ...(raw.providerApiKeys ?? {})
@@ -111,7 +129,7 @@ export class SecureConfig {
       providerApiKeys.perplexity = raw.perplexityApiKey;
     }
 
-    return { providerApiKeys };
+    return { providerApiKeys, toolApiKeys: raw.toolApiKeys ?? {} };
   }
 
   private async readSecrets(): Promise<NormalizedSecretFile> {
@@ -119,7 +137,7 @@ export class SecureConfig {
       const raw = await readFile(this.filePath, "utf8");
       return this.normalizeSecrets(JSON.parse(raw) as SecretFile);
     } catch {
-      return { providerApiKeys: {} };
+      return { providerApiKeys: {}, toolApiKeys: {} };
     }
   }
 

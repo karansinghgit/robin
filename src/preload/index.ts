@@ -87,6 +87,9 @@ const bridge: RobinBridge = {
         if (payload.type === "context_update") {
           handlers.onContextUpdate?.(payload);
         }
+        if (payload.type === "tool_status") {
+          handlers.onToolStatus?.(payload);
+        }
       };
 
       ipcRenderer.on(CHANNELS.streamEvent, listener);

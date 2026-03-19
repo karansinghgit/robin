@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { ChatMessage, Citation } from "../../shared/contracts";
+import { StreamReplyResult } from "../tools/types";
 
 function buildTranscript(messages: ChatMessage[]): string {
   return messages
@@ -55,7 +56,7 @@ export class PerplexityProvider {
     messages: ChatMessage[];
     systemPrompt?: string;
     onDelta: (delta: string) => void;
-  }): Promise<{ citations: Citation[] }> {
+  }): Promise<StreamReplyResult> {
     const client = new OpenAI({
       apiKey: input.apiKey,
       baseURL: "https://api.perplexity.ai/v1"
@@ -84,7 +85,8 @@ export class PerplexityProvider {
     }
 
     return {
-      citations: extractCitations(completedResponse)
+      citations: extractCitations(completedResponse),
+      toolCalls: []
     };
   }
 }

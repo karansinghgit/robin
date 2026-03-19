@@ -1,4 +1,5 @@
 import { ChatAttachment, ChatMessage } from "../../shared/contracts";
+import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
 
 type GeminiRole = "user" | "model";
 
@@ -102,14 +103,29 @@ function parseGoogleError(rawBody: string): string | null {
   }
 }
 
+function extractFunctionCalls(payload: unknown): ToolCall[] {
+  const candidates = Array.isArray((payload as any)?.candidates) ? (payload as any).candidates : [];
+  const first = candidates[0] as any;
+  const parts = Array.isArray(first?.content?.parts) ? first.content.parts : [];
+  return parts
+    .filter((p: any) => p?.functionCall)
+    .map((p: any) => ({
+      id: `gemini-${crypto.randomUUID()}`,
+      name: p.functionCall.name,
+      arguments: JSON.stringify(p.functionCall.args ?? {})
+    }));
+}
+
 export class GoogleProvider {
   async streamReply(input: {
     apiKey: string;
     model: string;
     messages: ChatMessage[];
     systemPrompt?: string;
+    tools?: ToolDefinition[];
+    toolHistory?: ToolRound[];
     onDelta: (delta: string) => void;
-  }): Promise<void> {
+  }): Promise<StreamReplyResult> {
     const rawModelId = input.model.startsWith("models/") ? input.model.slice("models/".length) : input.model;
     const modelId = rawModelId.trim();
     if (!modelId) {
@@ -120,9 +136,34 @@ export class GoogleProvider {
     if (contents.length === 0) {
       throw new Error("Add a message or image first.");
     }
+
+    for (const round of input.toolHistory ?? []) {
+      contents.push({
+        role: "model",
+        parts: round.calls.map((c) => ({
+          functionCall: { name: c.name, args: JSON.parse(c.arguments) }
+        }))
+      } as any);
+      contents.push({
+        role: "user",
+        parts: round.results.map((r) => ({
+          functionResponse: { name: r.name, response: { content: r.content } }
+        }))
+      } as any);
+    }
+
     const body: Record<string, unknown> = { contents };
     if (input.systemPrompt) {
       body.systemInstruction = { parts: [{ text: input.systemPrompt }] };
+    }
+    if (input.tools?.length) {
+      body.tools = [{
+        functionDeclarations: input.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }))
+      }];
     }
     const response = await fetch(url, {
       method: "POST",
@@ -142,6 +183,12 @@ export class GoogleProvider {
     }
 
     const payload = await response.json();
+
+    const functionCalls = extractFunctionCalls(payload);
+    if (functionCalls.length > 0) {
+      return { citations: [], toolCalls: functionCalls };
+    }
+
     const output = extractText(payload);
     if (!output) {
       throw new Error("Google returned an empty response.");
@@ -150,5 +197,7 @@ export class GoogleProvider {
     for (const delta of chunkText(output)) {
       input.onDelta(delta);
     }
+
+    return { citations: [], toolCalls: [] };
   }
 }

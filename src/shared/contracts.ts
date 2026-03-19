@@ -192,6 +192,14 @@ export type ChatStreamEvent =
       streamId: string;
       type: "context_update";
       todos: TodoItem[];
+    }
+  | {
+      streamId: string;
+      type: "tool_status";
+      threadId: string;
+      messageId: string;
+      toolName: string;
+      status: "calling" | "complete";
     };
 
 export interface TodoItem {
@@ -231,6 +239,7 @@ export interface RobinBridge {
         onDone: (event: Extract<ChatStreamEvent, { type: "done" }>) => void;
         onError: (event: Extract<ChatStreamEvent, { type: "error" }>) => void;
         onContextUpdate: (event: Extract<ChatStreamEvent, { type: "context_update" }>) => void;
+        onToolStatus: (event: Extract<ChatStreamEvent, { type: "tool_status" }>) => void;
       }>
     ) => Promise<string>;
     listThreads: () => Promise<ThreadSummary[]>;

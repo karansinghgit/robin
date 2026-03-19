@@ -1,13 +1,14 @@
 import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import {
   ChatMessage,
-  Citation,
   LocalModelCatalogItem,
   ModelDeleteResult,
   ModelPullResult,
   OllamaStatus
 } from "../../shared/contracts";
+import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_DOWNLOAD_URL = "https://ollama.com/download";
@@ -188,14 +189,44 @@ export class OllamaProvider {
     model: string;
     messages: ChatMessage[];
     systemPrompt?: string;
+    tools?: ToolDefinition[];
+    toolHistory?: ToolRound[];
     onDelta: (delta: string) => void;
-  }): Promise<{ citations: Citation[] }> {
-    const ollamaMessages: Array<{ role: string; content: string }> = [];
+  }): Promise<StreamReplyResult> {
+    const ollamaMessages: Array<Record<string, unknown>> = [];
     if (input.systemPrompt) {
       ollamaMessages.push({ role: "system", content: input.systemPrompt });
     }
     for (const message of input.messages) {
       ollamaMessages.push({ role: message.role, content: message.content });
+    }
+
+    for (const round of input.toolHistory ?? []) {
+      ollamaMessages.push({
+        role: "assistant",
+        content: "",
+        tool_calls: round.calls.map((c) => ({
+          function: { name: c.name, arguments: JSON.parse(c.arguments) }
+        }))
+      });
+      for (const result of round.results) {
+        ollamaMessages.push({
+          role: "tool",
+          content: result.content
+        });
+      }
+    }
+
+    const requestBody: Record<string, unknown> = {
+      model: input.model,
+      messages: ollamaMessages,
+      stream: true
+    };
+    if (input.tools?.length) {
+      requestBody.tools = input.tools.map((t) => ({
+        type: "function",
+        function: { name: t.name, description: t.description, parameters: t.parameters }
+      }));
     }
 
     let response: Response | null = null;
@@ -206,11 +237,7 @@ export class OllamaProvider {
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({
-            model: input.model,
-            messages: ollamaMessages,
-            stream: true
-          })
+          body: JSON.stringify(requestBody)
         });
         response = nextResponse;
         if (response.ok && response.body) {
@@ -232,6 +259,7 @@ export class OllamaProvider {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let responseToolCalls: ToolCall[] = [];
 
     while (true) {
       const { value, done } = await reader.read();
@@ -247,23 +275,43 @@ export class OllamaProvider {
         if (!trimmed) {
           continue;
         }
-        const chunk = JSON.parse(trimmed) as { message?: { content?: string } };
+        const chunk = JSON.parse(trimmed) as {
+          message?: { content?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> };
+          done?: boolean;
+        };
         const delta = chunk.message?.content ?? "";
         if (delta) {
           input.onDelta(delta);
+        }
+        if (chunk.message?.tool_calls?.length) {
+          responseToolCalls = chunk.message.tool_calls.map((tc) => ({
+            id: `ollama-${randomUUID()}`,
+            name: tc.function.name,
+            arguments: JSON.stringify(tc.function.arguments)
+          }));
         }
       }
     }
 
     if (buffer.trim()) {
-      const chunk = JSON.parse(buffer) as { message?: { content?: string } };
+      const chunk = JSON.parse(buffer) as {
+        message?: { content?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> };
+        done?: boolean;
+      };
       const delta = chunk.message?.content ?? "";
       if (delta) {
         input.onDelta(delta);
       }
+      if (chunk.message?.tool_calls?.length) {
+        responseToolCalls = chunk.message.tool_calls.map((tc) => ({
+          id: `ollama-${randomUUID()}`,
+          name: tc.function.name,
+          arguments: JSON.stringify(tc.function.arguments)
+        }));
+      }
     }
 
-    return { citations: [] };
+    return { citations: [], toolCalls: responseToolCalls };
   }
 
   async listCatalog(limit = 100): Promise<LocalModelCatalogItem[]> {

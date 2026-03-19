@@ -18,6 +18,7 @@ import {
   SaveConfigInput,
   ThreadSummary,
   TodoItem,
+  NoteItem,
   UpdateCheckResult
 } from "../shared/contracts";
 
@@ -639,6 +640,10 @@ export function App() {
   const [editingTodoTitle, setEditingTodoTitle] = useState("");
   const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
   const [dragOverTodoId, setDragOverTodoId] = useState<string | null>(null);
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [noteTitleDraft, setNoteTitleDraft] = useState("");
+  const [noteContentDraft, setNoteContentDraft] = useState("");
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
@@ -999,6 +1004,42 @@ export function App() {
     } catch {
       await loadTodos();
     }
+  }
+
+  async function loadNotes() {
+    try {
+      const list = await getRobinBridge().notes.list();
+      setNotes(list);
+    } catch { /* ignore */ }
+  }
+
+  async function createNote() {
+    try {
+      const note = await getRobinBridge().notes.create("Untitled");
+      setNotes((prev) => [note, ...prev]);
+      setActiveNoteId(note.id);
+      setNoteTitleDraft(note.title);
+      setNoteContentDraft(note.content);
+    } catch { /* ignore */ }
+  }
+
+  async function saveNote(id: string, title: string, content: string) {
+    try {
+      const updated = await getRobinBridge().notes.update(id, { title, content });
+      if (updated) {
+        setNotes((prev) => prev.map((n) => n.id === id ? updated : n).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function deleteNote(id: string) {
+    try {
+      await getRobinBridge().notes.delete(id);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+      if (activeNoteId === id) {
+        setActiveNoteId(null);
+      }
+    } catch { /* ignore */ }
   }
 
   useEffect(() => {
@@ -1652,6 +1693,9 @@ export function App() {
                 }
               : current);
           },
+          onContextUpdate: ({ todos: updatedTodos }) => {
+            setTodos(updatedTodos);
+          },
           onDone: ({ thread }) => {
             if (streamToken !== streamSequenceRef.current) {
               return;
@@ -1891,11 +1935,11 @@ export function App() {
             </button>
             <button
               type="button"
-              className="sidebar-nav-cell sidebar-nav-cell-disabled"
+              className={`sidebar-nav-cell${sidebarTab === "notes" ? " sidebar-nav-cell-active" : ""}`}
+              onClick={() => { setSidebarTab("notes"); setScreen("chat"); void loadNotes(); }}
             >
               <IconNote />
               <span>Notes</span>
-              <span className="sidebar-nav-soon">soon</span>
             </button>
             <button
               type="button"
@@ -2494,11 +2538,60 @@ export function App() {
                 )}
               </div>
             </div>
-          ) : (sidebarTab === "notes" || sidebarTab === "calendar") ? (
+          ) : sidebarTab === "notes" ? (
+            <div className="notes-main-panel">
+              {activeNoteId === null ? (
+                <>
+                  <header className="notes-main-header">
+                    <h1 className="notes-main-title">Notes</h1>
+                    <button type="button" className="notes-new-btn" onClick={() => { void createNote(); }}>+ New</button>
+                  </header>
+                  <div className="notes-list">
+                    {notes.length > 0 ? notes.map((note) => (
+                      <button
+                        key={note.id}
+                        type="button"
+                        className="notes-list-item"
+                        onClick={() => {
+                          setActiveNoteId(note.id);
+                          setNoteTitleDraft(note.title);
+                          setNoteContentDraft(note.content);
+                        }}
+                      >
+                        <span className="notes-list-item-title">{note.title || "Untitled"}</span>
+                        <span className="notes-list-item-preview">{note.content.slice(0, 80) || "Empty note"}</span>
+                      </button>
+                    )) : (
+                      <p className="notes-empty">No notes yet</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <header className="notes-editor-header">
+                    <button type="button" className="notes-back-btn" onClick={() => { setActiveNoteId(null); }}>← Back</button>
+                    <button type="button" className="notes-delete-btn" onClick={() => { void deleteNote(activeNoteId); }}>Delete</button>
+                  </header>
+                  <input
+                    className="notes-title-input"
+                    value={noteTitleDraft}
+                    onChange={(e) => setNoteTitleDraft(e.target.value)}
+                    onBlur={() => { void saveNote(activeNoteId, noteTitleDraft, noteContentDraft); }}
+                    placeholder="Title"
+                  />
+                  <textarea
+                    className="notes-content-area"
+                    value={noteContentDraft}
+                    onChange={(e) => setNoteContentDraft(e.target.value)}
+                    onBlur={() => { void saveNote(activeNoteId, noteTitleDraft, noteContentDraft); }}
+                    placeholder="Write in markdown..."
+                  />
+                </>
+              )}
+            </div>
+          ) : sidebarTab === "calendar" ? (
             <div className="coming-soon-main">
-              <p className="coming-soon-label">
-                {sidebarTab === "notes" ? "Notes" : "Calendar"} coming soon
-              </p>
+              <p className="coming-soon-label">Calendar coming soon</p>
             </div>
           ) : (
             <>

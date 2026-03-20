@@ -220,9 +220,7 @@ export class AppStorage {
 
   async getSettings(): Promise<SettingsData> {
     const raw = await this.readJson<unknown>(this.settingsPath, DEFAULT_SETTINGS);
-    const normalized = normalizeSettings(raw);
-    await this.writeJson(this.settingsPath, normalized);
-    return normalized;
+    return normalizeSettings(raw);
   }
 
   async saveSettings(updater: (current: SettingsData) => SettingsData): Promise<SettingsData> {

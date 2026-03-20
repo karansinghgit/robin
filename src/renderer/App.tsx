@@ -4,6 +4,8 @@ import "@fontsource/gochi-hand";
 import "@fontsource/dm-sans/500.css";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+const REMARK_PLUGINS = [remarkGfm];
 import {
   AssistantMode,
   CLOUD_PROVIDER_IDS,
@@ -738,8 +740,13 @@ export function App() {
     });
   }
 
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 80);
+    return () => { if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current); };
   }, [messages.length, messages[messages.length - 1]?.content]);
 
   const localModels = ollamaStatus?.models ?? [];
@@ -2699,7 +2706,7 @@ export function App() {
                           ) : null}
                           {message.role === "assistant" ? (
                             <div className="md-content">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
                                 {message.content}
                               </ReactMarkdown>
                             </div>

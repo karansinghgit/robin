@@ -1,6 +1,6 @@
 import { ToolExecutor } from "./types";
 
-const SEARCH_TIMEOUT_MS = 10_000;
+const SEARCH_TIMEOUT_MS = 6_000;
 
 interface BraveWebResult {
   title?: string;

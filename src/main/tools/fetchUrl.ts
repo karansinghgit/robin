@@ -1,7 +1,7 @@
 import { ToolExecutor } from "./types";
 
 const MAX_CONTENT_CHARS = 30_000;
-const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 8_000;
 const USER_AGENT = "Robin/1.0 (Personal AI Assistant)";
 
 function stripHtml(html: string): string {

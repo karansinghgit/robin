@@ -4,6 +4,8 @@ import "@fontsource/gochi-hand";
 import "@fontsource/dm-sans/500.css";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+const REMARK_PLUGINS = [remarkGfm];
 import {
   AssistantMode,
   CLOUD_PROVIDER_IDS,
@@ -738,8 +740,13 @@ export function App() {
     });
   }
 
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 80);
+    return () => { if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current); };
   }, [messages.length, messages[messages.length - 1]?.content]);
 
   const localModels = ollamaStatus?.models ?? [];
@@ -1665,15 +1672,14 @@ export function App() {
     setError(null);
     const streamToken = streamSequenceRef.current + 1;
     streamSequenceRef.current = streamToken;
-    if (streamWatchdogRef.current) {
-      clearTimeout(streamWatchdogRef.current);
-    }
-    streamWatchdogRef.current = setTimeout(() => {
-      if (streamToken !== streamSequenceRef.current) {
-        return;
-      }
-      void stopPendingResponse("Model response timed out. Press Stop and retry.");
-    }, 30000);
+    const resetWatchdog = () => {
+      if (streamWatchdogRef.current) clearTimeout(streamWatchdogRef.current);
+      streamWatchdogRef.current = setTimeout(() => {
+        if (streamToken !== streamSequenceRef.current) return;
+        void stopPendingResponse("Model response timed out. Press Stop and retry.");
+      }, 60000);
+    };
+    resetWatchdog();
     setIsStreaming(true);
     const text = prompt.trim();
     const outgoingAttachments = pendingAttachments;
@@ -1701,6 +1707,7 @@ export function App() {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
+            resetWatchdog();
             queueDelta(messageId, delta);
           },
           onCitations: ({ messageId, citations }) => {
@@ -1720,6 +1727,7 @@ export function App() {
             setTodos(updatedTodos);
           },
           onToolStatus: ({ toolName, status }) => {
+            resetWatchdog();
             if (status === "calling") {
               setToolStatus({ toolName, status });
             } else {
@@ -2699,7 +2707,7 @@ export function App() {
                           ) : null}
                           {message.role === "assistant" ? (
                             <div className="md-content">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
                                 {message.content}
                               </ReactMarkdown>
                             </div>

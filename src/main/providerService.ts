@@ -147,15 +147,15 @@ export class ProviderService {
     checkedAt: number;
   }>();
 
+  private readonly contextProviders: Array<import("./context/types").ContextProvider>;
+
   constructor(
     private readonly storage: AppStorage,
     private readonly secureConfig: SecureConfig
-  ) {}
-
-  private get contextProviders() {
-    return [
-      new TodoContextProvider(this.storage),
-      new NotesContextProvider(this.storage)
+  ) {
+    this.contextProviders = [
+      new TodoContextProvider(storage),
+      new NotesContextProvider(storage)
     ];
   }
 
@@ -495,10 +495,11 @@ export class ProviderService {
     });
 
     let finalCitations: Citation[] = [];
-    const systemPrompt = await buildSystemPrompt(this.contextProviders, request.prompt);
-    const braveApiKey = await this.secureConfig.getToolApiKey("brave");
-    const toolToggles = (await this.storage.getSettings()).toolToggles;
-    const toolExecutors = buildToolExecutors(braveApiKey, toolToggles);
+    const [systemPrompt, braveApiKey] = await Promise.all([
+      buildSystemPrompt(this.contextProviders, request.prompt),
+      this.secureConfig.getToolApiKey("brave")
+    ]);
+    const toolExecutors = buildToolExecutors(braveApiKey, settings.toolToggles);
     const toolDefs = getToolDefinitions(toolExecutors);
 
     const onDelta = (delta: string) => {

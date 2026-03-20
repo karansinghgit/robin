@@ -1672,15 +1672,14 @@ export function App() {
     setError(null);
     const streamToken = streamSequenceRef.current + 1;
     streamSequenceRef.current = streamToken;
-    if (streamWatchdogRef.current) {
-      clearTimeout(streamWatchdogRef.current);
-    }
-    streamWatchdogRef.current = setTimeout(() => {
-      if (streamToken !== streamSequenceRef.current) {
-        return;
-      }
-      void stopPendingResponse("Model response timed out. Press Stop and retry.");
-    }, 30000);
+    const resetWatchdog = () => {
+      if (streamWatchdogRef.current) clearTimeout(streamWatchdogRef.current);
+      streamWatchdogRef.current = setTimeout(() => {
+        if (streamToken !== streamSequenceRef.current) return;
+        void stopPendingResponse("Model response timed out. Press Stop and retry.");
+      }, 60000);
+    };
+    resetWatchdog();
     setIsStreaming(true);
     const text = prompt.trim();
     const outgoingAttachments = pendingAttachments;
@@ -1708,6 +1707,7 @@ export function App() {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
+            resetWatchdog();
             queueDelta(messageId, delta);
           },
           onCitations: ({ messageId, citations }) => {
@@ -1727,6 +1727,7 @@ export function App() {
             setTodos(updatedTodos);
           },
           onToolStatus: ({ toolName, status }) => {
+            resetWatchdog();
             if (status === "calling") {
               setToolStatus({ toolName, status });
             } else {

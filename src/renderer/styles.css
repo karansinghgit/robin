@@ -535,8 +535,41 @@ button:focus-visible {
   background: var(--raised);
 }
 
+.todo-main-item-dragging {
+  opacity: 0.74;
+}
+
 .todo-main-item-drag-over {
   border-top: 2px solid var(--accent);
+}
+
+.todo-drag-handle {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: #6d6d76;
+  padding: 0;
+  cursor: grab;
+  transition: color 120ms ease, transform 120ms var(--ease);
+}
+
+.todo-drag-handle svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.todo-main-item:hover .todo-drag-handle {
+  color: #8a8a95;
+}
+
+.todo-drag-handle:active {
+  cursor: grabbing;
+  transform: scale(0.96);
 }
 
 .todo-check {

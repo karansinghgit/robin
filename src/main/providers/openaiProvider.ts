@@ -1,6 +1,11 @@
 import OpenAI from "openai";
 import { ChatMessage, CloudModelCatalogItem } from "../../shared/contracts";
-import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
+import {
+  ToolDefinition,
+  ToolCall,
+  ToolRound,
+  StreamReplyResult
+} from "../tools/types";
 
 function buildResponsesInput(messages: ChatMessage[]): Array<{
   role: "user" | "assistant";
@@ -62,11 +67,20 @@ function buildResponsesInput(messages: ChatMessage[]): Array<{
 function isLikelyChatModel(id: string): boolean {
   const normalized = id.toLowerCase();
 
-  if (/(embedding|moderation|omni-moderation|whisper|transcribe|tts|image|dall-e|realtime)/.test(normalized)) {
+  if (
+    /(embedding|moderation|omni-moderation|whisper|transcribe|tts|image|dall-e|realtime)/.test(
+      normalized
+    )
+  ) {
     return false;
   }
 
-  return normalized.startsWith("gpt-") || normalized.startsWith("o1") || normalized.startsWith("o3") || normalized.startsWith("o4");
+  return (
+    normalized.startsWith("gpt-") ||
+    normalized.startsWith("o1") ||
+    normalized.startsWith("o3") ||
+    normalized.startsWith("o4")
+  );
 }
 
 function modesForModel(modelId: string): string[] {
@@ -185,13 +199,19 @@ export class OpenAIProvider {
     }
     const stream = await (client.responses.create as any)(createParams);
 
-    const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+    const pendingToolCalls = new Map<
+      number,
+      { id: string; name: string; arguments: string }
+    >();
 
     for await (const event of stream) {
       if (event?.type === "response.output_text.delta" && event.delta) {
         input.onDelta(event.delta);
       }
-      if (event?.type === "response.output_item.added" && event.item?.type === "function_call") {
+      if (
+        event?.type === "response.output_item.added" &&
+        event.item?.type === "function_call"
+      ) {
         pendingToolCalls.set(event.output_index, {
           id: event.item.call_id || "",
           name: event.item.name || "",

@@ -8,7 +8,12 @@ import {
   ModelPullResult,
   OllamaStatus
 } from "../../shared/contracts";
-import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
+import {
+  ToolDefinition,
+  ToolCall,
+  ToolRound,
+  StreamReplyResult
+} from "../tools/types";
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_DOWNLOAD_URL = "https://ollama.com/download";
@@ -26,14 +31,16 @@ interface PullProgressChunk {
 function decodeHtml(input: string): string {
   return input
     .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
+    .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
 }
 
 function normalizeText(input: string): string {
-  return decodeHtml(input.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+  return decodeHtml(input.replace(/<[^>]*>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseParamBillions(sizeToken: string): number {
@@ -55,9 +62,15 @@ function parseParamBillions(sizeToken: string): number {
   return numeric;
 }
 
-function buildModelDownloadEstimate(paramsBillions: number): { estimatedSizeMb: number; minRamGb: number } {
+function buildModelDownloadEstimate(paramsBillions: number): {
+  estimatedSizeMb: number;
+  minRamGb: number;
+} {
   const estimatedSizeMb = Math.max(256, Math.round(paramsBillions * 520));
-  const minRamGb = Math.max(2, Math.round(((estimatedSizeMb / 1024) * 1.45 + 0.5) * 10) / 10);
+  const minRamGb = Math.max(
+    2,
+    Math.round(((estimatedSizeMb / 1024) * 1.45 + 0.5) * 10) / 10
+  );
   return { estimatedSizeMb, minRamGb };
 }
 
@@ -91,12 +104,17 @@ function formatReachabilityError(baseUrl: string): string {
   return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Open Ollama (or run 'ollama serve') and try again.`;
 }
 
-function resolveSelectedModel(selectedModel: string | undefined, models: string[]): string | undefined {
+function resolveSelectedModel(
+  selectedModel: string | undefined,
+  models: string[]
+): string | undefined {
   if (!selectedModel) {
     return models[0];
   }
   const normalized = selectedModel.trim().toLowerCase();
-  const matched = models.find((model) => model.trim().toLowerCase() === normalized);
+  const matched = models.find(
+    (model) => model.trim().toLowerCase() === normalized
+  );
   return matched ?? models[0];
 }
 
@@ -105,7 +123,10 @@ async function sleep(ms: number): Promise<void> {
 }
 
 export class OllamaProvider {
-  private catalogCache: { loadedAt: number; items: LocalModelCatalogItem[] } | null = null;
+  private catalogCache: {
+    loadedAt: number;
+    items: LocalModelCatalogItem[];
+  } | null = null;
 
   async detect(baseUrl: string, selectedModel?: string): Promise<OllamaStatus> {
     const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
@@ -129,7 +150,9 @@ export class OllamaProvider {
           continue;
         }
 
-        const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
+        const payload = (await response.json()) as {
+          models?: Array<{ name?: string; model?: string }>;
+        };
         const models = (payload.models ?? [])
           .map((item) => item.name ?? item.model ?? "")
           .filter(Boolean);
@@ -156,7 +179,9 @@ export class OllamaProvider {
           continue;
         }
 
-        const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
+        const payload = (await response.json()) as {
+          models?: Array<{ name?: string; model?: string }>;
+        };
         const models = (payload.models ?? [])
           .map((item) => item.name ?? item.model ?? "")
           .filter(Boolean);
@@ -225,7 +250,11 @@ export class OllamaProvider {
     if (input.tools?.length) {
       requestBody.tools = input.tools.map((t) => ({
         type: "function",
-        function: { name: t.name, description: t.description, parameters: t.parameters }
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
       }));
     }
 
@@ -266,7 +295,9 @@ export class OllamaProvider {
           });
           response = nextResponse;
           if (response.ok && response.body) break;
-        } catch { continue; }
+        } catch {
+          continue;
+        }
       }
     }
 
@@ -298,7 +329,12 @@ export class OllamaProvider {
           continue;
         }
         const chunk = JSON.parse(trimmed) as {
-          message?: { content?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> };
+          message?: {
+            content?: string;
+            tool_calls?: Array<{
+              function: { name: string; arguments: Record<string, unknown> };
+            }>;
+          };
           done?: boolean;
         };
         const delta = chunk.message?.content ?? "";
@@ -317,7 +353,12 @@ export class OllamaProvider {
 
     if (buffer.trim()) {
       const chunk = JSON.parse(buffer) as {
-        message?: { content?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> };
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            function: { name: string; arguments: Record<string, unknown> };
+          }>;
+        };
         done?: boolean;
       };
       const delta = chunk.message?.content ?? "";
@@ -340,7 +381,10 @@ export class OllamaProvider {
     const safeLimit = Math.min(Math.max(limit, 1), 100);
     const now = Date.now();
 
-    if (this.catalogCache && now - this.catalogCache.loadedAt < CATALOG_CACHE_TTL_MS) {
+    if (
+      this.catalogCache &&
+      now - this.catalogCache.loadedAt < CATALOG_CACHE_TTL_MS
+    ) {
       return this.catalogCache.items.slice(0, safeLimit);
     }
 
@@ -356,34 +400,54 @@ export class OllamaProvider {
 
     for (const block of blocks) {
       const nameMatch =
-        block.match(/x-test-model-title[^>]*title="([^"]+)"/)?.[1]
-        ?? block.match(/href="\/library\/([^":?#"]+)"/)?.[1];
+        block.match(/x-test-model-title[^>]*title="([^"]+)"/)?.[1] ??
+        block.match(/href="\/library\/([^":?#"]+)"/)?.[1];
       const modelName = nameMatch?.trim();
       if (!modelName || dedupe.has(modelName)) {
         continue;
       }
 
-      const sizeMatches = Array.from(block.matchAll(/x-test-size[^>]*>([^<]+)</g))
+      const sizeMatches = Array.from(
+        block.matchAll(/x-test-size[^>]*>([^<]+)</g)
+      )
         .map((match) => normalizeText(match[1]))
         .filter(Boolean);
       const uniqueSizes = Array.from(new Set(sizeMatches));
       const sizeChoices = uniqueSizes
-        .map((sizeLabel) => ({ sizeLabel, paramsBillions: parseParamBillions(sizeLabel) }))
+        .map((sizeLabel) => ({
+          sizeLabel,
+          paramsBillions: parseParamBillions(sizeLabel)
+        }))
         .filter((entry) => entry.paramsBillions > 0)
         .sort((left, right) => left.paramsBillions - right.paramsBillions);
 
-      const smallest = sizeChoices[0] ?? { sizeLabel: "latest", paramsBillions: 7 };
-      const selectedTag = smallest.sizeLabel.toLowerCase() === "latest" ? "latest" : smallest.sizeLabel;
+      const smallest = sizeChoices[0] ?? {
+        sizeLabel: "latest",
+        paramsBillions: 7
+      };
+      const selectedTag =
+        smallest.sizeLabel.toLowerCase() === "latest"
+          ? "latest"
+          : smallest.sizeLabel;
       const modelTag = `${modelName}:${selectedTag}`;
-      const descriptionMatch = block.match(/<p class="max-w-lg break-words text-neutral-800 text-md">([\s\S]*?)<\/p>/)?.[1] ?? "";
-      const pulls = normalizeText(block.match(/x-test-pull-count>([^<]+)</)?.[1] ?? "—");
-      const { estimatedSizeMb, minRamGb } = buildModelDownloadEstimate(smallest.paramsBillions);
+      const descriptionMatch =
+        block.match(
+          /<p class="max-w-lg break-words text-neutral-800 text-md">([\s\S]*?)<\/p>/
+        )?.[1] ?? "";
+      const pulls = normalizeText(
+        block.match(/x-test-pull-count>([^<]+)</)?.[1] ?? "—"
+      );
+      const { estimatedSizeMb, minRamGb } = buildModelDownloadEstimate(
+        smallest.paramsBillions
+      );
 
       items.push({
         id: modelTag,
         model: modelTag,
         title: modelName,
-        description: normalizeText(descriptionMatch) || "Open model from the Ollama library.",
+        description:
+          normalizeText(descriptionMatch) ||
+          "Open model from the Ollama library.",
         sizeLabel: selectedTag,
         sizes: uniqueSizes,
         paramsBillions: Number(smallest.paramsBillions.toFixed(3)),
@@ -440,7 +504,9 @@ export class OllamaProvider {
     }
 
     if (!response.ok || !response.body) {
-      throw new Error(`Could not start downloading ${targetModel}. Check that Ollama is running.`);
+      throw new Error(
+        `Could not start downloading ${targetModel}. Check that Ollama is running.`
+      );
     }
 
     const reader = response.body.getReader();
@@ -510,7 +576,10 @@ export class OllamaProvider {
     return result;
   }
 
-  async deleteModel(baseUrl: string, model: string): Promise<ModelDeleteResult> {
+  async deleteModel(
+    baseUrl: string,
+    model: string
+  ): Promise<ModelDeleteResult> {
     const targetModel = model.trim();
     if (!targetModel) {
       throw new Error("Model name is required.");

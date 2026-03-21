@@ -39,12 +39,19 @@ npm start
 npm run typecheck
 ```
 
+5. Run the full quality gate:
+
+```bash
+npm test
+```
+
 ## Common Commands
 
 ```bash
 make help
 make setup
 make dev
+make lint
 make test
 make package
 make install
@@ -57,6 +64,7 @@ If you prefer npm directly:
 ```bash
 npm run setup
 npm run dev
+npm run lint
 npm run test
 npm run package:mac
 npm run make:mac
@@ -86,10 +94,11 @@ After bootstrap, the repo-level wrappers [scripts/nodew](/Users/karansingh/proje
 
 ## Testing
 
-Robin currently has a strong smoke-test workflow rather than a full automated test suite.
+Robin now has a baseline automated quality gate plus a manual desktop smoke pass.
 
 1. Run `npm install`
 2. Run `npm run test`
+   This executes ESLint, `tsc --noEmit`, the Node-based unit tests under [test](/Users/karansingh/projects/robin/test), and Prettier checks.
 3. Run `npm run dev`
 4. Verify manually:
    - Tray icon appears
@@ -167,6 +176,7 @@ Robin uses the standard Electron architecture with a **main process** (Node.js) 
 ### Local-first persistence
 
 All data is stored as JSON files in Electron's `userData` directory:
+
 - `settings.json` — app config, provider preferences, model selections
 - `threads.json` — full conversation history with messages and attachments
 - `todos.json` — todo items with ordering
@@ -176,8 +186,8 @@ API keys are encrypted at rest using Electron's `safeStorage` API (macOS Keychai
 ### Multi-provider abstraction
 
 Robin supports multiple AI providers through a uniform streaming interface:
+
 - **OpenAI** — GPT models with mode support (chat/responses)
-- **Anthropic** — Claude models
 - **Google** — Gemini models with native image support
 - **Perplexity** — Search-grounded answers with citations
 - **OpenRouter** — Proxy to any model via user-provided model IDs
@@ -188,6 +198,7 @@ Each provider implements `streamReply()` with delta callbacks. The `ProviderServ
 ### Context management
 
 Before sending messages to any provider, Robin optimises the payload:
+
 1. **Image stripping** — only the most recent user message retains image attachments. Older images remain in the thread for display but are excluded from API calls to avoid payload bloat.
 2. **Context truncation** — if total message content exceeds ~100K characters (~25K tokens), the oldest messages are dropped while preserving at least the last 4 messages (2 turns).
 3. **Model-agnostic threads** — threads store raw messages without model metadata. The model selection is applied at call time, so you can switch providers mid-conversation.
@@ -198,6 +209,6 @@ The sidebar uses a 2x2 navigation grid (Chats, Todos, Notes, Calendar) that swit
 
 ## Next Steps
 
-- Add real renderer/main-process automated tests
+- Add Electron-level integration tests for IPC and window lifecycle
 - Add a richer settings surface for provider management
 - Add update distribution after the first beta

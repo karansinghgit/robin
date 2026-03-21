@@ -35,11 +35,16 @@ export class NotesContextProvider implements ContextProvider {
       return { note, score };
     });
 
-    const relevant = keywords.length > 0
-      ? scored.filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score)
-      : scored;
+    const relevant =
+      keywords.length > 0
+        ? scored
+            .filter((entry) => entry.score > 0)
+            .sort((a, b) => b.score - a.score)
+        : scored;
 
-    const toDisplay = relevant.slice(0, MAX_NOTES_IN_CONTEXT).map((entry) => entry.note);
+    const toDisplay = relevant
+      .slice(0, MAX_NOTES_IN_CONTEXT)
+      .map((entry) => entry.note);
     if (toDisplay.length === 0) return "";
 
     const sections = toDisplay.map((note) => {

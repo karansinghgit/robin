@@ -23,9 +23,12 @@ export class TodoContextProvider implements ContextProvider {
       .split(/\s+/)
       .filter((w) => w.length > 1);
 
-    const matched = keywords.length > 0
-      ? todos.filter((t) => keywords.some((kw) => t.title.toLowerCase().includes(kw)))
-      : [];
+    const matched =
+      keywords.length > 0
+        ? todos.filter((t) =>
+            keywords.some((kw) => t.title.toLowerCase().includes(kw))
+          )
+        : [];
 
     const toDisplay = matched.length > 0 ? matched : todos;
     const lines = toDisplay

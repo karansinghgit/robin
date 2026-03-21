@@ -1,17 +1,23 @@
 import { ChatAttachment, ChatMessage } from "../../shared/contracts";
-import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
+import {
+  ToolDefinition,
+  ToolCall,
+  ToolRound,
+  StreamReplyResult
+} from "../tools/types";
 
 type GeminiRole = "user" | "model";
 
 interface GeminiContent {
   role: GeminiRole;
   parts: Array<
-    | { text: string }
-    | { inlineData: { mimeType: string; data: string } }
+    { text: string } | { inlineData: { mimeType: string; data: string } }
   >;
 }
 
-function imagePartFromAttachment(attachment: ChatAttachment): { inlineData: { mimeType: string; data: string } } | null {
+function imagePartFromAttachment(
+  attachment: ChatAttachment
+): { inlineData: { mimeType: string; data: string } } | null {
   if (!attachment?.dataUrl || !attachment?.mimeType) {
     return null;
   }
@@ -65,13 +71,17 @@ function toGeminiContents(messages: ChatMessage[]): GeminiContent[] {
 }
 
 function extractText(payload: unknown): string {
-  const candidates = Array.isArray((payload as { candidates?: unknown[] })?.candidates)
+  const candidates = Array.isArray(
+    (payload as { candidates?: unknown[] })?.candidates
+  )
     ? (payload as { candidates: unknown[] }).candidates
     : [];
-  const first = candidates[0] as { content?: { parts?: Array<{ text?: string }> } } | undefined;
+  const first = candidates[0] as
+    | { content?: { parts?: Array<{ text?: string }> } }
+    | undefined;
   const parts = Array.isArray(first?.content?.parts) ? first.content.parts : [];
   return parts
-    .map((part) => typeof part?.text === "string" ? part.text : "")
+    .map((part) => (typeof part?.text === "string" ? part.text : ""))
     .filter(Boolean)
     .join("");
 }
@@ -104,7 +114,9 @@ function parseGoogleError(rawBody: string): string | null {
 }
 
 function extractFunctionCalls(payload: unknown): ToolCall[] {
-  const candidates = Array.isArray((payload as any)?.candidates) ? (payload as any).candidates : [];
+  const candidates = Array.isArray((payload as any)?.candidates)
+    ? (payload as any).candidates
+    : [];
   const first = candidates[0] as any;
   const parts = Array.isArray(first?.content?.parts) ? first.content.parts : [];
   return parts
@@ -126,7 +138,9 @@ export class GoogleProvider {
     toolHistory?: ToolRound[];
     onDelta: (delta: string) => void;
   }): Promise<StreamReplyResult> {
-    const rawModelId = input.model.startsWith("models/") ? input.model.slice("models/".length) : input.model;
+    const rawModelId = input.model.startsWith("models/")
+      ? input.model.slice("models/".length)
+      : input.model;
     const modelId = rawModelId.trim();
     if (!modelId) {
       throw new Error("Pick a Google model first.");
@@ -157,13 +171,15 @@ export class GoogleProvider {
       body.systemInstruction = { parts: [{ text: input.systemPrompt }] };
     }
     if (input.tools?.length) {
-      body.tools = [{
-        functionDeclarations: input.tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters
-        }))
-      }];
+      body.tools = [
+        {
+          functionDeclarations: input.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }))
+        }
+      ];
     }
     const response = await fetch(url, {
       method: "POST",
@@ -177,7 +193,10 @@ export class GoogleProvider {
       const body = await response.text();
       const parsedError = parseGoogleError(body);
       if (response.status === 401 || response.status === 403) {
-        throw new Error(parsedError || "Google API key is invalid or does not have Gemini API access.");
+        throw new Error(
+          parsedError ||
+            "Google API key is invalid or does not have Gemini API access."
+        );
       }
       throw new Error(parsedError || "Google model request failed.");
     }

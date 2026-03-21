@@ -9,7 +9,9 @@ export interface PlatformShellOptions {
   trayTitle?: string;
 }
 
-function trimTransparentPadding(image: Electron.NativeImage): Electron.NativeImage {
+function trimTransparentPadding(
+  image: Electron.NativeImage
+): Electron.NativeImage {
   const { width, height } = image.getSize();
   if (width <= 0 || height <= 0) {
     return image;
@@ -47,9 +49,18 @@ function trimTransparentPadding(image: Electron.NativeImage): Electron.NativeIma
 
 function createTrayImage() {
   const assetCandidates = [
-    { path: path.join(app.getAppPath(), "assets", "trayTemplate.png"), template: true },
-    { path: path.join(app.getAppPath(), "assets", "image.png"), template: false },
-    { path: path.join(process.cwd(), "assets", "trayTemplate.png"), template: true },
+    {
+      path: path.join(app.getAppPath(), "assets", "trayTemplate.png"),
+      template: true
+    },
+    {
+      path: path.join(app.getAppPath(), "assets", "image.png"),
+      template: false
+    },
+    {
+      path: path.join(process.cwd(), "assets", "trayTemplate.png"),
+      template: true
+    },
     { path: path.join(process.cwd(), "assets", "image.png"), template: false }
   ];
 
@@ -59,10 +70,15 @@ function createTrayImage() {
       const trimmedImage = trimTransparentPadding(image);
       const size = trimmedImage.getSize();
       const targetHeight = 18;
-      const targetWidth = size.width > 0 && size.height > 0
-        ? Math.max(18, Math.round((size.width / size.height) * targetHeight))
-        : 18;
-      const resizedImage = trimmedImage.resize({ width: targetWidth, height: targetHeight, quality: "best" });
+      const targetWidth =
+        size.width > 0 && size.height > 0
+          ? Math.max(18, Math.round((size.width / size.height) * targetHeight))
+          : 18;
+      const resizedImage = trimmedImage.resize({
+        width: targetWidth,
+        height: targetHeight,
+        quality: "best"
+      });
       if (process.platform === "darwin" && candidate.template) {
         resizedImage.setTemplateImage(true);
       }
@@ -77,7 +93,9 @@ function createTrayImage() {
   `.trim();
 
   const fallbackImage = nativeImage
-    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString("base64")}`)
+    .createFromDataURL(
+      `data:image/svg+xml;base64,${Buffer.from(fallbackSvg).toString("base64")}`
+    )
     .resize({ width: 18, height: 18, quality: "best" });
 
   if (process.platform === "darwin") {
@@ -96,7 +114,7 @@ export class PlatformShell {
   private pendingTrayBounds?: Electron.Rectangle;
   private lastTrayToggleAt = 0;
 
-  constructor(private readonly options: PlatformShellOptions) { }
+  constructor(private readonly options: PlatformShellOptions) {}
 
   create(): BrowserWindow {
     this.panel = new BrowserWindow({
@@ -160,7 +178,10 @@ export class PlatformShell {
       this.tray.setTitle(this.options.trayTitle);
     }
     const trayMenu = Menu.buildFromTemplate([
-      { label: "Open Robin", click: () => this.openPanel(this.tray?.getBounds()) },
+      {
+        label: "Open Robin",
+        click: () => this.openPanel(this.tray?.getBounds())
+      },
       { type: "separator" },
       { label: "Quit", role: "quit" }
     ]);
@@ -175,7 +196,9 @@ export class PlatformShell {
       });
     } else {
       this.tray.setContextMenu(trayMenu);
-      this.tray.on("click", (_event, bounds) => this.togglePanelFromTray(bounds));
+      this.tray.on("click", (_event, bounds) =>
+        this.togglePanelFromTray(bounds)
+      );
     }
 
     this.shortcut = this.options.defaultShortcut;
@@ -183,7 +206,9 @@ export class PlatformShell {
     return this.panel;
   }
 
-  async updateShortcut(shortcut: string): Promise<{ success: boolean; shortcut: string }> {
+  async updateShortcut(
+    shortcut: string
+  ): Promise<{ success: boolean; shortcut: string }> {
     const success = await this.options.onShortcutChange(shortcut);
     if (success) {
       this.shortcut = shortcut;
@@ -293,7 +318,7 @@ export class PlatformShell {
     }
 
     if (process.platform === "darwin" && trayBounds) {
-      const { width, height } = this.panel.getBounds();
+      const { width } = this.panel.getBounds();
       const display = screen.getDisplayNearestPoint({
         x: Math.round(trayBounds.x),
         y: Math.round(trayBounds.y)
@@ -301,7 +326,10 @@ export class PlatformShell {
       const x = Math.round(trayBounds.x + trayBounds.width / 2 - width / 2);
       const y = Math.round(trayBounds.y + trayBounds.height);
       this.panel.setPosition(
-        Math.min(Math.max(x, display.workArea.x + 12), display.workArea.x + display.workArea.width - width - 12),
+        Math.min(
+          Math.max(x, display.workArea.x + 12),
+          display.workArea.x + display.workArea.width - width - 12
+        ),
         y
       );
       this.panel.show();

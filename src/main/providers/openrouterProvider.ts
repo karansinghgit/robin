@@ -1,5 +1,10 @@
 import { ChatAttachment, ChatMessage } from "../../shared/contracts";
-import { ToolDefinition, ToolCall, ToolRound, StreamReplyResult } from "../tools/types";
+import {
+  ToolDefinition,
+  ToolCall,
+  ToolRound,
+  StreamReplyResult
+} from "../tools/types";
 
 type OpenRouterContentPart =
   | { type: "text"; text: string }
@@ -23,7 +28,9 @@ interface OpenRouterModelDataEntry {
   };
 }
 
-function imagePartFromAttachment(attachment: ChatAttachment): OpenRouterContentPart | null {
+function imagePartFromAttachment(
+  attachment: ChatAttachment
+): OpenRouterContentPart | null {
   if (!attachment?.dataUrl) {
     return null;
   }
@@ -64,7 +71,8 @@ function toOpenRouterMessages(messages: ChatMessage[]): OpenRouterMessage[] {
 
     result.push({
       role: message.role,
-      content: parts.length === 1 && parts[0]?.type === "text" ? parts[0].text : parts
+      content:
+        parts.length === 1 && parts[0]?.type === "text" ? parts[0].text : parts
     });
   }
 
@@ -113,7 +121,11 @@ export class OpenRouterProvider {
   private modelCapabilitiesFetchedAt = 0;
 
   private async fetchModelCapabilitiesIfNeeded(): Promise<void> {
-    if ((Date.now() - this.modelCapabilitiesFetchedAt) < this.modelCapabilitiesTtlMs && this.modelInputModalitiesCache.size > 0) {
+    if (
+      Date.now() - this.modelCapabilitiesFetchedAt <
+        this.modelCapabilitiesTtlMs &&
+      this.modelInputModalitiesCache.size > 0
+    ) {
       return;
     }
 
@@ -128,20 +140,23 @@ export class OpenRouterProvider {
       throw new Error("Could not verify OpenRouter model capabilities.");
     }
 
-    const payload = await response.json() as { data?: unknown[] };
+    const payload = (await response.json()) as { data?: unknown[] };
     const items = Array.isArray(payload?.data) ? payload.data : [];
     const nextCache = new Map<string, Set<string>>();
 
     for (const item of items) {
       const model = item as OpenRouterModelDataEntry;
-      const id = typeof model.id === "string" ? model.id.trim().toLowerCase() : "";
+      const id =
+        typeof model.id === "string" ? model.id.trim().toLowerCase() : "";
       if (!id) {
         continue;
       }
       const rawInputModalities = model.architecture?.input_modalities;
       const normalized = Array.isArray(rawInputModalities)
         ? rawInputModalities
-            .filter((modality): modality is string => typeof modality === "string")
+            .filter(
+              (modality): modality is string => typeof modality === "string"
+            )
             .map((modality) => modality.trim().toLowerCase())
             .filter(Boolean)
         : [];
@@ -153,19 +168,24 @@ export class OpenRouterProvider {
   }
 
   private hasImageAttachments(messages: ChatMessage[]): boolean {
-    return messages.some((message) => (
-      message.role === "user" && (message.attachments?.length ?? 0) > 0
-    ));
+    return messages.some(
+      (message) =>
+        message.role === "user" && (message.attachments?.length ?? 0) > 0
+    );
   }
 
-  private async modelSupportsImageInput(model: string): Promise<boolean | null> {
+  private async modelSupportsImageInput(
+    model: string
+  ): Promise<boolean | null> {
     try {
       await this.fetchModelCapabilitiesIfNeeded();
     } catch {
       return null;
     }
 
-    const modalities = this.modelInputModalitiesCache.get(model.trim().toLowerCase());
+    const modalities = this.modelInputModalitiesCache.get(
+      model.trim().toLowerCase()
+    );
     if (!modalities) {
       return null;
     }
@@ -190,7 +210,9 @@ export class OpenRouterProvider {
       ? await this.modelSupportsImageInput(model)
       : null;
     if (supportsImage === false) {
-      throw new Error("Selected model does not support image input. Use a model with image input support.");
+      throw new Error(
+        "Selected model does not support image input. Use a model with image input support."
+      );
     }
 
     const userMessages = toOpenRouterMessages(input.messages);
@@ -224,37 +246,52 @@ export class OpenRouterProvider {
       }
     }
 
-    const hasImages = userMessages.some((m) =>
-      Array.isArray(m.content) && m.content.some((p) => p.type === "image_url")
+    const hasImages = userMessages.some(
+      (m) =>
+        Array.isArray(m.content) &&
+        m.content.some((p) => p.type === "image_url")
     );
 
     const body: Record<string, unknown> = { model, messages, stream: true };
     if (input.tools?.length) {
       body.tools = input.tools.map((t) => ({
         type: "function",
-        function: { name: t.name, description: t.description, parameters: t.parameters }
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters
+        }
       }));
     }
     const bodyStr = JSON.stringify(body);
 
-    console.log(`[OpenRouter] sending ${bodyStr.length} bytes, hasImages=${hasImages}, msgCount=${messages.length}`);
+    console.log(
+      `[OpenRouter] sending ${bodyStr.length} bytes, hasImages=${hasImages}, msgCount=${messages.length}`
+    );
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: bodyStr
-    });
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${input.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: bodyStr
+      }
+    );
 
-    console.log(`[OpenRouter] response: ${response.status} ${response.statusText}`);
+    console.log(
+      `[OpenRouter] response: ${response.status} ${response.statusText}`
+    );
 
     if (!response.ok) {
       const body = await response.text();
       const parsed = parseProviderError(body);
       if (/no endpoints found that support image input/i.test(parsed || "")) {
-        throw new Error("This model does not support image input. Choose a vision-capable model or send text only.");
+        throw new Error(
+          "This model does not support image input. Choose a vision-capable model or send text only."
+        );
       }
       if (response.status === 401 || response.status === 403) {
         throw new Error(parsed || "OpenRouter API key is invalid.");
@@ -269,7 +306,10 @@ export class OpenRouterProvider {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    const accumulatedToolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+    const accumulatedToolCalls = new Map<
+      number,
+      { id: string; name: string; arguments: string }
+    >();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -316,12 +356,17 @@ export class OpenRouterProvider {
             for (const tc of toolCallDeltas) {
               const idx = typeof tc.index === "number" ? tc.index : 0;
               if (!accumulatedToolCalls.has(idx)) {
-                accumulatedToolCalls.set(idx, { id: tc.id || "", name: "", arguments: "" });
+                accumulatedToolCalls.set(idx, {
+                  id: tc.id || "",
+                  name: "",
+                  arguments: ""
+                });
               }
               const acc = accumulatedToolCalls.get(idx)!;
               if (tc.id) acc.id = tc.id;
               if (tc.function?.name) acc.name = tc.function.name;
-              if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+              if (tc.function?.arguments)
+                acc.arguments += tc.function.arguments;
             }
           }
         } catch {

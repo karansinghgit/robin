@@ -12,6 +12,7 @@ import {
   IconChevron,
   IconCheck,
   IconClose,
+  IconDragHandle,
   IconExpand,
   IconImage,
   IconNote,
@@ -45,6 +46,11 @@ import {
   parseModelKey,
   resolveCloudProviderId
 } from "./lib/modelSelection";
+import {
+  reorderTodoForCompletion,
+  reorderTodoInGroup,
+  sortTodosForDisplay
+} from "../shared/todoOrdering";
 
 const REMARK_PLUGINS = [remarkGfm];
 import {
@@ -384,6 +390,7 @@ export function App() {
   const displayName = profileName.toLowerCase().startsWith("karan")
     ? "Karan"
     : profileName;
+  const sortedTodos = useMemo(() => sortTodosForDisplay(todos), [todos]);
 
   const catalogForDisplay = useMemo(() => {
     if (localCatalog.length === 0) {
@@ -638,15 +645,11 @@ export function App() {
   }
 
   async function toggleTodo(id: string, completed: boolean) {
-    setTodos((current) =>
-      current.map((t) => (t.id === id ? { ...t, completed } : t))
-    );
+    setTodos((current) => reorderTodoForCompletion(current, id, completed));
     try {
       await getRobinBridge().todos.update(id, { completed });
     } catch {
-      setTodos((current) =>
-        current.map((t) => (t.id === id ? { ...t, completed: !completed } : t))
-      );
+      await loadTodos();
     }
   }
 
@@ -683,12 +686,7 @@ export function App() {
       setDragOverTodoId(null);
       return;
     }
-    const reordered = [...todos];
-    const fromIndex = reordered.findIndex((t) => t.id === draggedTodoId);
-    const toIndex = reordered.findIndex((t) => t.id === targetId);
-    if (fromIndex === -1 || toIndex === -1) return;
-    const [moved] = reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, moved);
+    const reordered = reorderTodoInGroup(todos, draggedTodoId, targetId);
     setTodos(reordered);
     setDraggedTodoId(null);
     setDragOverTodoId(null);
@@ -2655,13 +2653,11 @@ export function App() {
                 />
               </div>
               <div className="todo-main-list">
-                {todos.length > 0 ? (
-                  todos.map((todo) => (
+                {sortedTodos.length > 0 ? (
+                  sortedTodos.map((todo) => (
                     <div
                       key={todo.id}
-                      className={`todo-main-item${dragOverTodoId === todo.id ? " todo-main-item-drag-over" : ""}`}
-                      draggable
-                      onDragStart={() => setDraggedTodoId(todo.id)}
+                      className={`todo-main-item${dragOverTodoId === todo.id ? " todo-main-item-drag-over" : ""}${draggedTodoId === todo.id ? " todo-main-item-dragging" : ""}`}
                       onDragOver={(e) => {
                         e.preventDefault();
                         setDragOverTodoId(todo.id);
@@ -2678,6 +2674,20 @@ export function App() {
                         setDragOverTodoId(null);
                       }}
                     >
+                      <button
+                        type="button"
+                        className="todo-drag-handle"
+                        draggable
+                        aria-label="Reorder todo"
+                        title="Drag to reorder"
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", todo.id);
+                          setDraggedTodoId(todo.id);
+                        }}
+                      >
+                        <IconDragHandle />
+                      </button>
                       <button
                         type="button"
                         className={`todo-check${todo.completed ? " todo-check-done" : ""}`}

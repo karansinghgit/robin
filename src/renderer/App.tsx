@@ -1652,7 +1652,6 @@ export function App() {
           (providerId) => providerId === parsed.model.trim().toLowerCase()
         )
       : undefined;
-  const isOpenAISelected = selectedCloudProvider === "openai";
   const isCloudProviderSelected = Boolean(selectedCloudProvider);
 
   const modelCapabilities = (() => {
@@ -1689,6 +1688,8 @@ export function App() {
     value: mode,
     label: mode.toUpperCase()
   }));
+  const shouldShowCloudModeSelector =
+    selectedCloudProvider !== undefined && cloudModeOptions.length > 0;
   const composerCloudModelOptions = useMemo(() => {
     const options: DropdownOption[] = [];
 
@@ -1767,6 +1768,22 @@ export function App() {
     }
     return "";
   })();
+
+  useEffect(() => {
+    if (parsed.mode !== "search") {
+      return;
+    }
+    if (composerSelectValue || composerCloudModelOptions.length === 0) {
+      return;
+    }
+
+    void applyComposerSelection(composerCloudModelOptions[0].value);
+  }, [
+    parsed.mode,
+    composerSelectValue,
+    composerCloudModelOptions,
+    selectedCloudModelsDraft
+  ]);
 
   return (
     <div className="robin-shell">
@@ -3017,7 +3034,7 @@ export function App() {
                           void applyComposerSelection(nextValue);
                         }}
                       />
-                      {isOpenAISelected ? (
+                      {shouldShowCloudModeSelector ? (
                         <ThemedDropdown
                           className="composer-cloud-mode-dropdown"
                           value={cloudModeDraft}

@@ -3030,6 +3030,14 @@ export function App() {
                         compact
                         borderless
                         menuDirection="up"
+                        menuFooter={
+                          isCloudProviderSelected &&
+                          !selectedCloudProviderModelsLoading &&
+                          !selectedCloudProviderModelsError &&
+                          selectedPinnedModels.length === 0
+                            ? "Pick your cloud models in Settings."
+                            : undefined
+                        }
                         onChange={(nextValue) => {
                           void applyComposerSelection(nextValue);
                         }}
@@ -3146,12 +3154,6 @@ export function App() {
                         <div className="composer-cloud-notes">
                           <p className="composer-cloud-note composer-cloud-note-error">
                             {selectedCloudProviderModelsError}
-                          </p>
-                        </div>
-                      ) : selectedPinnedModels.length === 0 ? (
-                        <div className="composer-cloud-notes">
-                          <p className="composer-cloud-note">
-                            Pick your cloud models in Settings.
                           </p>
                         </div>
                       ) : null

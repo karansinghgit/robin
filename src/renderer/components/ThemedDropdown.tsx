@@ -12,6 +12,7 @@ export function ThemedDropdown({
   options,
   placeholder,
   onChange,
+  menuFooter,
   disabled,
   compact = false,
   borderless = false,
@@ -22,6 +23,7 @@ export function ThemedDropdown({
   options: DropdownOption[];
   placeholder: string;
   onChange: (value: string) => void;
+  menuFooter?: string;
   disabled?: boolean;
   compact?: boolean;
   borderless?: boolean;
@@ -121,9 +123,20 @@ export function ThemedDropdown({
           role="listbox"
         >
           {renderedOptions.length > 0 ? (
-            renderedOptions
+            <>
+              {renderedOptions}
+              {menuFooter ? (
+                <div className="themed-dropdown-footer">{menuFooter}</div>
+              ) : null}
+            </>
           ) : (
-            <div className="themed-dropdown-empty">No options available</div>
+            <div
+              className={
+                menuFooter ? "themed-dropdown-footer" : "themed-dropdown-empty"
+              }
+            >
+              {menuFooter ?? "No options available"}
+            </div>
           )}
         </div>
       ) : null}

@@ -1691,6 +1691,15 @@ button:focus-visible {
   padding: 6px 8px;
 }
 
+.themed-dropdown-footer {
+  margin-top: 4px;
+  padding: 8px 8px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--t3);
+}
+
 .settings-cloud-dropdown {
   max-width: 320px;
   margin-bottom: 8px;

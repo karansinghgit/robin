@@ -60,6 +60,18 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   position: relative;
+  animation: app-enter 360ms var(--ease);
+}
+
+@keyframes app-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.996);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* ── Toolbar ────────────────────────── */
@@ -92,7 +104,7 @@ button:focus-visible {
   border: none;
   color: var(--t2);
   cursor: pointer;
-  transition: color 100ms ease, filter 100ms ease, opacity 100ms ease;
+  transition: color 100ms ease, filter 100ms ease, opacity 100ms ease, transform 130ms var(--ease);
   flex-shrink: 0;
   padding: 0;
   opacity: 0.82;
@@ -115,6 +127,7 @@ button:focus-visible {
   color: var(--warm-hover);
   opacity: 1;
   filter: drop-shadow(0 0 8px var(--warm-glow));
+  transform: translateY(-1px);
 }
 .tool-btn:focus,
 .tool-btn:focus-visible {
@@ -151,6 +164,7 @@ button:focus-visible {
   text-transform: lowercase;
   transition: color 100ms ease, opacity 100ms ease;
   text-shadow: 0 0 18px rgba(215, 228, 248, 0.35), 0 0 40px rgba(200, 218, 245, 0.15);
+  animation: brand-float 6.4s ease-in-out infinite;
 }
 
 .toolbar-brand:hover {
@@ -161,6 +175,11 @@ button:focus-visible {
 .toolbar-brand:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+@keyframes brand-float {
+  0%, 100% { transform: translate(-50%, -50%); }
+  50% { transform: translate(-50%, calc(-50% - 1px)); }
 }
 
 /* ── Sidebar ────────────────────────── */
@@ -273,14 +292,14 @@ button:focus-visible {
   padding: 8px 10px;
   border-radius: 10px;
   cursor: pointer;
-  transition: background 90ms ease, color 90ms ease;
+  transition: background 90ms ease, color 90ms ease, transform 140ms var(--ease);
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.chat-sidebar-item:hover { background: var(--raised); color: var(--t1); }
+.chat-sidebar-item:hover { background: var(--raised); color: var(--t1); transform: translateX(2px); }
 
 .chat-sidebar-item-active {
   background: var(--accent-soft);
@@ -301,34 +320,33 @@ button:focus-visible {
 .chat-sidebar-footer {
   margin-top: 0;
   flex-shrink: 0;
-  padding: 8px 6px 4px;
+  padding: 8px 6px 6px;
   border-top: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .chat-sidebar-settings {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   border: none;
   background: transparent;
   color: var(--t2);
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 0;
+  border-radius: 8px;
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  text-align: left;
   cursor: pointer;
-  transition: background 90ms ease, color 90ms ease;
+  transition: background 90ms ease, color 90ms ease, transform 120ms var(--ease);
 }
 
 .chat-sidebar-settings svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   color: currentColor;
   flex-shrink: 0;
 }
@@ -336,6 +354,7 @@ button:focus-visible {
 .chat-sidebar-settings:hover {
   background: var(--raised);
   color: var(--t1);
+  transform: translateY(-1px);
 }
 
 .chat-sidebar-settings-active {
@@ -636,13 +655,32 @@ button:focus-visible {
 }
 
 .chat-sidebar-branding {
+  border: none;
+  background: transparent;
   color: rgba(234, 236, 242, 0.35);
   font-size: 10px;
   font-weight: 500;
   font-family: "Gochi Hand", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: 0.34em;
-  text-align: center;
-  padding: 0 2px 2px;
+  letter-spacing: 0.26em;
+  text-align: right;
+  margin-left: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  cursor: pointer;
+  transition: color 120ms ease, transform 120ms var(--ease);
+}
+
+.chat-sidebar-branding:hover {
+  color: rgba(234, 236, 242, 0.72);
+  transform: translateY(-1px);
+}
+
+.chat-sidebar-branding-line {
+  display: block;
+  line-height: 0.95;
 }
 
 .chat-main {
@@ -652,31 +690,6 @@ button:focus-visible {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-/* ── Greeting ───────────────────────── */
-
-.greeting-hi {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.032em;
-  line-height: 1.12;
-  color: var(--t1);
-  text-align: center;
-}
-
-.greeting-name {
-  color: #d7b067;
-}
-
-.greeting-question {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--t1);
-  margin-top: 1px;
-  letter-spacing: -0.032em;
-  line-height: 1.12;
-  text-align: center;
 }
 
 /* ── Error ──────────────────────────── */
@@ -758,10 +771,54 @@ button:focus-visible {
   justify-content: center;
 }
 
-.new-tab-state,
-.new-tab-state * {
+/* ── Empty State ────────────────────── */
+
+.new-tab-state {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px 24px;
   user-select: none;
   -webkit-user-select: none;
+  animation: fade-up-in 420ms var(--ease);
+}
+
+.greeting-hi {
+  font-family: "Capriola", "DM Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.12;
+  color: var(--t1);
+  text-align: center;
+}
+
+.greeting-name {
+  color: #d7b067;
+}
+
+.greeting-question {
+  font-family: "Capriola", "DM Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 30px;
+  font-weight: 400;
+  color: var(--t1);
+  margin-top: 1px;
+  letter-spacing: 0.01em;
+  line-height: 1.12;
+  text-align: center;
+}
+
+@keyframes fade-up-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .chat-log::-webkit-scrollbar { width: 8px; }
@@ -941,74 +998,6 @@ button:focus-visible {
   color: var(--t2);
 }
 
-/* ── New Tab ────────────────────────── */
-
-.new-tab-state {
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 0 16px 24px;
-  position: relative;
-}
-
-/* ── Bat-signal spotlight ───────────── */
-
-.bat-signal {
-  position: relative;
-  width: 100%;
-  height: 160px;
-  margin-bottom: 2px;
-  pointer-events: none;
-  overflow: visible;
-}
-
-/* Core beam: tall narrow radial gradient, bright at base, fading up */
-.bat-signal-beam {
-  position: absolute;
-  bottom: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 240px;
-  height: 200px;
-  background: radial-gradient(
-    ellipse 18% 70% at 50% 100%,
-    rgba(210, 225, 248, 0.42) 0%,
-    rgba(195, 216, 242, 0.2) 30%,
-    rgba(180, 208, 238, 0.07) 60%,
-    transparent 100%
-  );
-}
-
-/* Grain texture over the beam */
-.bat-signal-beam::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
-  background-size: 140px 140px;
-  mix-blend-mode: soft-light;
-  opacity: 0.6;
-}
-
-/* Wider softer secondary glow for natural falloff */
-.bat-signal-beam-soft {
-  position: absolute;
-  bottom: -10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 320px;
-  height: 180px;
-  background: radial-gradient(
-    ellipse 30% 60% at 50% 100%,
-    rgba(200, 218, 240, 0.14) 0%,
-    rgba(185, 210, 238, 0.05) 50%,
-    transparent 100%
-  );
-  filter: blur(4px);
-}
-
 /* ── Composer ───────────────────────── */
 
 .composer {
@@ -1020,11 +1009,13 @@ button:focus-visible {
   background: var(--elevated);
   border: 1px solid var(--border-strong);
   border-radius: 18px;
-  transition: border-color 120ms ease;
+  transition: border-color 140ms ease, box-shadow 180ms ease, transform 180ms var(--ease);
 }
 
 .composer-box:focus-within {
   border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
 }
 
 .composer-input {
@@ -1598,6 +1589,12 @@ button:focus-visible {
 .settings-cloud-models-panel {
   margin-top: 10px;
   padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-cloud-tools-panel {
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 

@@ -137,9 +137,7 @@ async function formatStreamingError(
   return `Ollama replied from ${location}, but the response was not streamed. Check the base URL and any proxy in front of Ollama.`;
 }
 
-function mapOllamaToolCalls(
-  toolCalls?: OllamaToolCallPayload[]
-): ToolCall[] {
+function mapOllamaToolCalls(toolCalls?: OllamaToolCallPayload[]): ToolCall[] {
   if (!toolCalls?.length) {
     return [];
   }

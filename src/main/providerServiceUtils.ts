@@ -85,9 +85,7 @@ export function extractUrls(content: string): string[] {
 }
 
 export function isWeatherQuery(content: string): boolean {
-  return /\b(weather|forecast|temperature|rain|humidity|wind)\b/i.test(
-    content
-  );
+  return /\b(weather|forecast|temperature|rain|humidity|wind)\b/i.test(content);
 }
 
 export function requiresLiveWebSearch(content: string): boolean {

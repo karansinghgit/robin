@@ -1717,7 +1717,7 @@ export function App() {
   const modelCapabilities =
     parsed.mode === "local"
       ? NO_MODEL_CAPABILITIES
-      : selectedCloudModel?.capabilities ?? NO_MODEL_CAPABILITIES;
+      : (selectedCloudModel?.capabilities ?? NO_MODEL_CAPABILITIES);
   const cloudModeOptions: DropdownOption[] = (
     selectedCloudModel?.modes ?? []
   ).map((mode) => ({
@@ -2737,7 +2737,8 @@ export function App() {
                         onDragStart={(event) => {
                           event.dataTransfer.effectAllowed = "move";
                           event.dataTransfer.setData("text/plain", todo.id);
-                          const row = event.currentTarget.closest(".todo-main-item");
+                          const row =
+                            event.currentTarget.closest(".todo-main-item");
                           if (row instanceof HTMLElement) {
                             event.dataTransfer.setDragImage(row, 20, 20);
                           }

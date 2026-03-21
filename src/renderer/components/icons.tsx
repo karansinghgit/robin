@@ -248,3 +248,14 @@ export function IconCheck() {
     </svg>
   );
 }
+
+export function IconDragHandle() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="5" cy="5" r="1.1" />
+      <circle cx="11" cy="5" r="1.1" />
+      <circle cx="5" cy="11" r="1.1" />
+      <circle cx="11" cy="11" r="1.1" />
+    </svg>
+  );
+}

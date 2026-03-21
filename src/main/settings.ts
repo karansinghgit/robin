@@ -148,7 +148,12 @@ export function normalizeSettings(raw: unknown): SettingsData {
                     .filter(Boolean)
                 )
               )
-            : []
+            : [],
+          capabilities: {
+            image: Boolean(item.capabilities?.image),
+            tools: Boolean(item.capabilities?.tools),
+            search: Boolean(item.capabilities?.search)
+          }
         }))
         .filter((item) => item.id.length > 0);
 

@@ -1,6 +1,6 @@
 import { StatusBanner } from "./StatusBanner";
 
-export function ErrorBanner({
+export function TransientWarning({
   message,
   startedAt,
   durationMs,
@@ -13,15 +13,14 @@ export function ErrorBanner({
 }) {
   return (
     <StatusBanner
-      variant="error"
-      label="Error"
+      variant="warning"
+      label="Warning"
       message={message}
       onClose={onClose}
-      role="alert"
-      ariaLive="assertive"
+      role="status"
+      ariaLive="polite"
       startedAt={startedAt}
       durationMs={durationMs}
-      fullWidth
     />
   );
 }

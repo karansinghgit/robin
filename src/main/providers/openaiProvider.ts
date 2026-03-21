@@ -147,7 +147,12 @@ export class OpenAIProvider {
 
     return deduped.map((id) => ({
       id,
-      modes: modesForModel(id)
+      modes: modesForModel(id),
+      capabilities: {
+        image: true,
+        tools: true,
+        search: false
+      }
     }));
   }
 

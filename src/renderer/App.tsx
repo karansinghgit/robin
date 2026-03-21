@@ -12,6 +12,7 @@ import {
   IconChevron,
   IconCheck,
   IconClose,
+  IconDragHandle,
   IconExpand,
   IconImage,
   IconNote,
@@ -23,6 +24,7 @@ import {
 } from "./components/icons";
 import { SidebarFooter } from "./components/SidebarFooter";
 import { DropdownOption, ThemedDropdown } from "./components/ThemedDropdown";
+import { TransientWarning } from "./components/TransientWarning";
 import {
   buildCloudProviderStateMap,
   buildProviderDrafts,
@@ -44,6 +46,11 @@ import {
   parseModelKey,
   resolveCloudProviderId
 } from "./lib/modelSelection";
+import {
+  reorderTodoForCompletion,
+  reorderTodoInGroup,
+  sortTodosForDisplay
+} from "../shared/todoOrdering";
 
 const REMARK_PLUGINS = [remarkGfm];
 import {
@@ -68,6 +75,12 @@ type SidebarTab = "chats" | "todos" | "notes" | "calendar";
 type SettingsModeTab = "cloud" | "local";
 
 type SettingsSectionId = "models" | "shortcut" | "updates";
+
+const NO_MODEL_CAPABILITIES = {
+  image: false,
+  tools: false,
+  search: false
+} as const;
 
 const SHORTCUT_PRESETS = [
   { label: "Cmd/Ctrl + Shift + Space", value: "CommandOrControl+Shift+Space" },
@@ -201,6 +214,12 @@ function getRobinBridge(): RobinBridge {
 }
 
 export function App() {
+  const [warning, setWarning] = useState<{
+    id: number;
+    message: string;
+    startedAt: number;
+    durationMs: number;
+  } | null>(null);
   const [profileName, setProfileName] = useState("there");
   const [screen, setScreen] = useState<"chat" | "settings">("chat");
   const [settingsMode, setSettingsMode] = useState<SettingsModeTab>("cloud");
@@ -218,7 +237,6 @@ export function App() {
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoTitle, setEditingTodoTitle] = useState("");
   const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
-  const [dragOverTodoId, setDragOverTodoId] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [noteTitleDraft, setNoteTitleDraft] = useState("");
@@ -273,7 +291,12 @@ export function App() {
     toolName: string;
     status: "calling" | "complete";
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    id: number;
+    message: string;
+    startedAt: number;
+    durationMs: number;
+  } | null>(null);
   const [appVersion, setAppVersion] = useState("");
   const [updatesChecking, setUpdatesChecking] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
@@ -282,11 +305,56 @@ export function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamSequenceRef = useRef(0);
   const activeStreamIdRef = useRef<string | null>(null);
   const pendingDeltasRef = useRef(new Map<string, string>());
   const deltaFrameRef = useRef<number | null>(null);
+  const warnedAboutLegacyToolSettingsRef = useRef(false);
   const messages = activeThread?.messages ?? [];
+
+  function dismissWarning() {
+    if (warningTimeoutRef.current) {
+      clearTimeout(warningTimeoutRef.current);
+      warningTimeoutRef.current = null;
+    }
+    setWarning(null);
+  }
+
+  function showWarning(message: string, durationMs = 5000) {
+    const startedAt = performance.now();
+    const id = startedAt;
+    if (warningTimeoutRef.current) {
+      clearTimeout(warningTimeoutRef.current);
+    }
+    setWarning({ id, message, startedAt, durationMs });
+    warningTimeoutRef.current = setTimeout(() => {
+      setWarning((current) => (current?.id === id ? null : current));
+      warningTimeoutRef.current = null;
+    }, durationMs);
+  }
+
+  function dismissError() {
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
+    setError(null);
+  }
+
+  function showError(message: string, durationMs = 10000) {
+    const startedAt = performance.now();
+    const id = startedAt;
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+    setError({ id, message, startedAt, durationMs });
+    errorTimeoutRef.current = setTimeout(() => {
+      setError((current) => (current?.id === id ? null : current));
+      errorTimeoutRef.current = null;
+    }, durationMs);
+  }
 
   function applyPendingDeltas() {
     if (pendingDeltasRef.current.size === 0) {
@@ -354,6 +422,7 @@ export function App() {
   const displayName = profileName.toLowerCase().startsWith("karan")
     ? "Karan"
     : profileName;
+  const sortedTodos = useMemo(() => sortTodosForDisplay(todos), [todos]);
 
   const catalogForDisplay = useMemo(() => {
     if (localCatalog.length === 0) {
@@ -435,6 +504,10 @@ export function App() {
     ]);
     const nextStatus: ProviderStatus = {
       ...rawStatus,
+      toolToggles: {
+        fetchUrl: rawStatus.toolToggles?.fetchUrl !== false,
+        webSearch: rawStatus.toolToggles?.webSearch !== false
+      },
       cloudProviderKeys: normalizeCloudProviderKeys(
         rawStatus.cloudProviderKeys
       ),
@@ -443,6 +516,12 @@ export function App() {
         rawStatus.selectedCloudModels
       )
     };
+    if (!rawStatus.toolToggles && !warnedAboutLegacyToolSettingsRef.current) {
+      warnedAboutLegacyToolSettingsRef.current = true;
+      showWarning(
+        "Some older settings were missing. URL tool preferences were reset to defaults."
+      );
+    }
     setStatus(nextStatus);
     setProviderKeyDrafts(nextStatus.providerApiKeys);
     setSelectedCloudModelsDraft(nextStatus.selectedCloudModels);
@@ -598,15 +677,11 @@ export function App() {
   }
 
   async function toggleTodo(id: string, completed: boolean) {
-    setTodos((current) =>
-      current.map((t) => (t.id === id ? { ...t, completed } : t))
-    );
+    setTodos((current) => reorderTodoForCompletion(current, id, completed));
     try {
       await getRobinBridge().todos.update(id, { completed });
     } catch {
-      setTodos((current) =>
-        current.map((t) => (t.id === id ? { ...t, completed: !completed } : t))
-      );
+      await loadTodos();
     }
   }
 
@@ -640,18 +715,11 @@ export function App() {
   async function handleTodoDrop(targetId: string) {
     if (!draggedTodoId || draggedTodoId === targetId) {
       setDraggedTodoId(null);
-      setDragOverTodoId(null);
       return;
     }
-    const reordered = [...todos];
-    const fromIndex = reordered.findIndex((t) => t.id === draggedTodoId);
-    const toIndex = reordered.findIndex((t) => t.id === targetId);
-    if (fromIndex === -1 || toIndex === -1) return;
-    const [moved] = reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, moved);
+    const reordered = reorderTodoInGroup(todos, draggedTodoId, targetId);
     setTodos(reordered);
     setDraggedTodoId(null);
-    setDragOverTodoId(null);
     try {
       await getRobinBridge().todos.reorder(reordered.map((t) => t.id));
     } catch {
@@ -741,13 +809,21 @@ export function App() {
         await Promise.all([refreshStatus(), refreshThreads()]);
       } catch (loadError) {
         if (isActive) {
-          setError(errorMessage(loadError, "Could not load Robin state."));
+          showError(errorMessage(loadError, "Could not load Robin state."));
         }
       }
     })();
 
     return () => {
       isActive = false;
+      if (warningTimeoutRef.current) {
+        clearTimeout(warningTimeoutRef.current);
+        warningTimeoutRef.current = null;
+      }
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+        errorTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -798,16 +874,24 @@ export function App() {
 
     const selectedIds = selectedCloudModelsDraft[provider] ?? [];
     const providerModels = cloudModelsByProvider[provider] ?? [];
-    const selectableModels =
+    const selectableModels: CloudModelCatalogItem[] =
       provider === "openrouter"
-        ? selectedIds.map((modelId) => ({ id: modelId, modes: [] }))
+        ? selectedIds.map((modelId) => ({
+            id: modelId,
+            modes: [],
+            capabilities: NO_MODEL_CAPABILITIES
+          }))
         : providerModels.length > 0
           ? selectedIds
               .map((modelId) =>
                 providerModels.find((model) => model.id === modelId)
               )
               .filter((model): model is CloudModelCatalogItem => Boolean(model))
-          : selectedIds.map((modelId) => ({ id: modelId, modes: [] }));
+          : selectedIds.map((modelId) => ({
+              id: modelId,
+              modes: [],
+              capabilities: NO_MODEL_CAPABILITIES
+            }));
 
     if (selectableModels.length === 0) {
       if (cloudModelDraft) {
@@ -867,7 +951,7 @@ export function App() {
         try {
           void getRobinBridge().app.togglePanel();
         } catch (bridgeError) {
-          setError(
+          showError(
             errorMessage(
               bridgeError,
               "Robin desktop bridge is unavailable. Please restart Robin."
@@ -918,9 +1002,9 @@ export function App() {
     setIsStreaming(false);
     setToolStatus(null);
     if (typeof nextError === "string") {
-      setError(nextError);
+      showError(nextError);
     } else {
-      setError(null);
+      dismissError();
     }
     setActiveThread((current) =>
       current
@@ -960,14 +1044,14 @@ export function App() {
 
   async function persistConfig(patch: SaveConfigInput) {
     try {
-      setError(null);
+      dismissError();
       await getRobinBridge().providers.saveConfig({
         onboardingCompleted: true,
         ...patch
       });
       await refreshStatus();
     } catch (saveError) {
-      setError(errorMessage(saveError, "Could not save settings."));
+      showError(errorMessage(saveError, "Could not save settings."));
     }
   }
 
@@ -1021,7 +1105,7 @@ export function App() {
       next.model &&
       !localModelSet.has(next.model.toLowerCase())
     ) {
-      setError(
+      showWarning(
         `${next.model} is not downloaded yet. Download it first, then activate.`
       );
       return;
@@ -1032,7 +1116,7 @@ export function App() {
         (providerId) => providerId === next.model.trim().toLowerCase()
       );
       if (!nextCloudProvider) {
-        setError("Select a valid cloud provider.");
+        showWarning("Select a valid cloud provider.");
         return;
       }
       const nextCloudModel =
@@ -1054,7 +1138,7 @@ export function App() {
   async function applyComposerSelection(nextValue: string) {
     const parsedSelection = parseComposerValue(nextValue);
     if (parsedSelection.mode === "unknown") {
-      setError("Select a valid model.");
+      showWarning("Select a valid model.");
       return;
     }
 
@@ -1192,14 +1276,14 @@ export function App() {
       return;
     }
     try {
-      setError(null);
+      dismissError();
       const result = await getRobinBridge().app.setShortcut(shortcut);
       setShortcutDraft(result.shortcut);
       if (!result.success) {
-        setError("Shortcut in use.");
+        showWarning("Shortcut in use.");
       }
     } catch (shortcutError) {
-      setError(errorMessage(shortcutError, "Could not set shortcut."));
+      showError(errorMessage(shortcutError, "Could not set shortcut."));
     }
   }
 
@@ -1234,7 +1318,7 @@ export function App() {
     setLocalModelNotice(null);
 
     if (ollamaStatus?.state === "not_installed") {
-      setError("Ollama is not installed yet. Opening download page.");
+      showWarning("Ollama is not installed yet. Opening download page.");
       try {
         await getRobinBridge().app.openExternal(OLLAMA_DOWNLOAD_URL);
       } catch {
@@ -1250,7 +1334,7 @@ export function App() {
     }
 
     try {
-      setError(null);
+      dismissError();
       setPullingModel(targetModel);
       await getRobinBridge().ollama.pullModel(targetModel);
       const robin = getRobinBridge();
@@ -1271,7 +1355,7 @@ export function App() {
       await refreshStatus();
       await applyModelSelection(modelKey("local", targetModel));
     } catch (pullError) {
-      setError(errorMessage(pullError, `Could not download ${targetModel}.`));
+      showError(errorMessage(pullError, `Could not download ${targetModel}.`));
     } finally {
       setPullingModel(null);
     }
@@ -1294,7 +1378,7 @@ export function App() {
     }
 
     try {
-      setError(null);
+      dismissError();
       setLocalModelNotice(null);
       setDeletingModel(targetModel);
       await getRobinBridge().ollama.deleteModel(targetModel);
@@ -1315,7 +1399,7 @@ export function App() {
       }
       setLocalModelNotice(`${targetModel} deleted.`);
     } catch (deleteError) {
-      setError(errorMessage(deleteError, `Could not delete ${targetModel}.`));
+      showError(errorMessage(deleteError, `Could not delete ${targetModel}.`));
     } finally {
       setDeletingModel(null);
     }
@@ -1330,13 +1414,13 @@ export function App() {
       file.type.toLowerCase().startsWith("image/")
     );
     if (imageFiles.length === 0) {
-      setError("Only image files are supported.");
+      showWarning("Only image files are supported.");
       return;
     }
 
     const remainingSlots = MAX_IMAGE_ATTACHMENTS - pendingAttachments.length;
     if (remainingSlots <= 0) {
-      setError(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`);
+      showWarning(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`);
       return;
     }
 
@@ -1345,7 +1429,7 @@ export function App() {
 
     for (const file of accepted) {
       if (file.size > MAX_IMAGE_BYTES) {
-        setError(
+        showWarning(
           `"${file.name}" is too large. Use images under ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB.`
         );
         continue;
@@ -1359,17 +1443,19 @@ export function App() {
           dataUrl
         });
       } catch {
-        setError(`Could not read "${file.name}".`);
+        showWarning(`Could not read "${file.name}".`);
       }
     }
 
     if (nextAttachments.length > 0) {
-      setError(null);
+      dismissError();
       setPendingAttachments((current) => [...current, ...nextAttachments]);
     }
 
     if (imageFiles.length > accepted.length) {
-      setError(`Only ${MAX_IMAGE_ATTACHMENTS} images can be attached at once.`);
+      showWarning(
+        `Only ${MAX_IMAGE_ATTACHMENTS} images can be attached at once.`
+      );
     }
   }
 
@@ -1382,7 +1468,7 @@ export function App() {
   async function sendPrompt() {
     if (!prompt.trim() && pendingAttachments.length === 0) return;
     if (isStreaming) {
-      setError("Response in progress. Press Stop first.");
+      showWarning("Response in progress. Press Stop first.");
       return;
     }
     const parsed = parseModelKey(activeModelDraft);
@@ -1394,23 +1480,23 @@ export function App() {
         : undefined;
 
     if (parsed.mode === "search" && !selectedCloudProvider) {
-      setError("Select a cloud model first.");
+      showWarning("Select a cloud model first.");
       return;
     }
     if (selectedCloudProvider) {
       const selectedModels =
         selectedCloudModelsDraft[selectedCloudProvider] ?? [];
       if (selectedModels.length === 0) {
-        setError("Select at least one cloud model in Settings first.");
+        showWarning("Select at least one cloud model in Settings first.");
         return;
       }
       if (!cloudModelDraft || !selectedModels.includes(cloudModelDraft)) {
-        setError("Pick one of your selected cloud models.");
+        showWarning("Pick one of your selected cloud models.");
         return;
       }
     }
     if (parsed.mode === "local" && ollamaStatus?.state === "not_installed") {
-      setError("Ollama is not installed yet. Opening download page.");
+      showWarning("Ollama is not installed yet. Opening download page.");
       try {
         await getRobinBridge().app.openExternal(OLLAMA_DOWNLOAD_URL);
       } catch {
@@ -1419,23 +1505,22 @@ export function App() {
       return;
     }
     if (parsed.mode === "local" && !parsed.model) {
-      setError("Select or download a local model first.");
+      showWarning("Select or download a local model first.");
       return;
     }
     if (parsed.mode === "local" && pendingAttachments.length > 0) {
-      setError("Image input is not supported in Local mode yet.");
+      showWarning("Image input is not supported in Local mode yet.");
       return;
     }
-    setError(null);
+    dismissError();
     const streamToken = streamSequenceRef.current + 1;
     streamSequenceRef.current = streamToken;
     const resetWatchdog = () => {
       if (streamWatchdogRef.current) clearTimeout(streamWatchdogRef.current);
       streamWatchdogRef.current = setTimeout(() => {
         if (streamToken !== streamSequenceRef.current) return;
-        void stopPendingResponse(
-          "Model response timed out. Press Stop and retry."
-        );
+        showWarning("Model response timed out. Press Stop and retry.");
+        void stopPendingResponse();
       }, 60000);
     };
     resetWatchdog();
@@ -1518,7 +1603,7 @@ export function App() {
             setActiveThread({ ...thread });
             void refreshThreads(thread.id);
           },
-          onError: ({ message }) => {
+          onError: ({ message, threadId }) => {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
@@ -1530,10 +1615,10 @@ export function App() {
               clearTimeout(streamWatchdogRef.current);
               streamWatchdogRef.current = null;
             }
-            setError(
+            showError(
               errorMessage(new Error(message), "Could not complete request.")
             );
-            void refreshThreads(activeThread?.id);
+            void refreshThreads(threadId ?? activeThread?.id);
           }
         }
       );
@@ -1559,7 +1644,7 @@ export function App() {
       }
       setPrompt(text);
       setPendingAttachments(outgoingAttachments);
-      setError(
+      showError(
         errorMessage(streamError, "Could not start chat. Please retry.")
       );
     }
@@ -1575,7 +1660,7 @@ export function App() {
       await stopPendingResponse(undefined, false);
     }
     setActiveThread(null);
-    setError(null);
+    dismissError();
     setPendingAttachments([]);
     setScreen("chat");
   }
@@ -1591,14 +1676,14 @@ export function App() {
   async function deleteThread(id: string) {
     if (!confirm("Delete this conversation?")) return;
     try {
-      setError(null);
+      dismissError();
       await getRobinBridge().chat.deleteThread(id);
       if (activeThread?.id === id) {
         setActiveThread(null);
       }
       await refreshThreads();
     } catch (deleteError) {
-      setError(errorMessage(deleteError, "Could not delete chat."));
+      showError(errorMessage(deleteError, "Could not delete chat."));
     }
   }
 
@@ -1609,18 +1694,7 @@ export function App() {
           (providerId) => providerId === parsed.model.trim().toLowerCase()
         )
       : undefined;
-  const isOpenAISelected = selectedCloudProvider === "openai";
   const isCloudProviderSelected = Boolean(selectedCloudProvider);
-
-  const modelCapabilities = (() => {
-    if (parsed.mode === "local") {
-      return { image: false, tools: false, search: false };
-    }
-    if (selectedCloudProvider === "perplexity") {
-      return { image: false, tools: false, search: true };
-    }
-    return { image: true, tools: true, search: false };
-  })();
   const selectedCloudProviderModels = selectedCloudProvider
     ? (cloudModelsByProvider[selectedCloudProvider] ?? [])
     : [];
@@ -1640,12 +1714,18 @@ export function App() {
   const selectedCloudModel = visibleCloudModels.find(
     (model) => model.id === cloudModelDraft
   );
+  const modelCapabilities =
+    parsed.mode === "local"
+      ? NO_MODEL_CAPABILITIES
+      : (selectedCloudModel?.capabilities ?? NO_MODEL_CAPABILITIES);
   const cloudModeOptions: DropdownOption[] = (
     selectedCloudModel?.modes ?? []
   ).map((mode) => ({
     value: mode,
     label: mode.toUpperCase()
   }));
+  const shouldShowCloudModeSelector =
+    selectedCloudProvider !== undefined && cloudModeOptions.length > 0;
   const composerCloudModelOptions = useMemo(() => {
     const options: DropdownOption[] = [];
 
@@ -1725,6 +1805,22 @@ export function App() {
     return "";
   })();
 
+  useEffect(() => {
+    if (parsed.mode !== "search") {
+      return;
+    }
+    if (composerSelectValue || composerCloudModelOptions.length === 0) {
+      return;
+    }
+
+    void applyComposerSelection(composerCloudModelOptions[0].value);
+  }, [
+    parsed.mode,
+    composerSelectValue,
+    composerCloudModelOptions,
+    selectedCloudModelsDraft
+  ]);
+
   return (
     <div className="robin-shell">
       <div className="toolbar">
@@ -1764,6 +1860,17 @@ export function App() {
           </button>
         </div>
       </div>
+
+      {warning ? (
+        <div className="warning-rail">
+          <TransientWarning
+            message={warning.message}
+            startedAt={warning.startedAt}
+            durationMs={warning.durationMs}
+            onClose={dismissWarning}
+          />
+        </div>
+      ) : null}
 
       <div className="chat-workspace">
         <aside
@@ -1873,7 +1980,12 @@ export function App() {
               </header>
 
               {error ? (
-                <ErrorBanner message={error} onClose={() => setError(null)} />
+                <ErrorBanner
+                  message={error.message}
+                  startedAt={error.startedAt}
+                  durationMs={error.durationMs}
+                  onClose={dismissError}
+                />
               ) : null}
 
               <section className="settings-pane-scroll">
@@ -2599,19 +2711,14 @@ export function App() {
                 />
               </div>
               <div className="todo-main-list">
-                {todos.length > 0 ? (
-                  todos.map((todo) => (
+                {sortedTodos.length > 0 ? (
+                  sortedTodos.map((todo) => (
                     <div
                       key={todo.id}
-                      className={`todo-main-item${dragOverTodoId === todo.id ? " todo-main-item-drag-over" : ""}`}
-                      draggable
-                      onDragStart={() => setDraggedTodoId(todo.id)}
+                      className={`todo-main-item${draggedTodoId === todo.id ? " todo-main-item-dragging" : ""}`}
                       onDragOver={(e) => {
                         e.preventDefault();
-                        setDragOverTodoId(todo.id);
-                      }}
-                      onDragLeave={() => {
-                        if (dragOverTodoId === todo.id) setDragOverTodoId(null);
+                        e.dataTransfer.dropEffect = "move";
                       }}
                       onDrop={(e) => {
                         e.preventDefault();
@@ -2619,9 +2726,27 @@ export function App() {
                       }}
                       onDragEnd={() => {
                         setDraggedTodoId(null);
-                        setDragOverTodoId(null);
                       }}
                     >
+                      <button
+                        type="button"
+                        className="todo-drag-handle"
+                        draggable
+                        aria-label="Reorder todo"
+                        title="Drag to reorder"
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", todo.id);
+                          const row =
+                            event.currentTarget.closest(".todo-main-item");
+                          if (row instanceof HTMLElement) {
+                            event.dataTransfer.setDragImage(row, 20, 20);
+                          }
+                          setDraggedTodoId(todo.id);
+                        }}
+                      >
+                        <IconDragHandle />
+                      </button>
                       <button
                         type="button"
                         className={`todo-check${todo.completed ? " todo-check-done" : ""}`}
@@ -2778,7 +2903,12 @@ export function App() {
           ) : (
             <>
               {error ? (
-                <ErrorBanner message={error} onClose={() => setError(null)} />
+                <ErrorBanner
+                  message={error.message}
+                  startedAt={error.startedAt}
+                  durationMs={error.durationMs}
+                  onClose={dismissError}
+                />
               ) : null}
 
               <section
@@ -2947,25 +3077,27 @@ export function App() {
                         compact
                         borderless
                         menuDirection="up"
+                        menuFooter={
+                          isCloudProviderSelected &&
+                          !selectedCloudProviderModelsLoading &&
+                          !selectedCloudProviderModelsError &&
+                          selectedPinnedModels.length === 0
+                            ? "Pick your cloud models in Settings."
+                            : undefined
+                        }
                         onChange={(nextValue) => {
                           void applyComposerSelection(nextValue);
                         }}
                       />
-                      {isOpenAISelected ? (
-                        <ThemedDropdown
-                          className="composer-cloud-mode-dropdown"
-                          value={cloudModeDraft}
-                          options={cloudModeOptions}
-                          placeholder="Mode"
-                          compact
-                          borderless
-                          menuDirection="up"
-                          onChange={setCloudModeDraft}
-                        />
-                      ) : null}
                       <div className="capability-badges">
                         <span
-                          className={`cap-badge${modelCapabilities.image ? " cap-active" : ""}`}
+                          className={`cap-badge${modelCapabilities.image ? " cap-active" : " cap-unsupported"}`}
+                          role="img"
+                          aria-label={
+                            modelCapabilities.image
+                              ? "Model supports image input"
+                              : "Model does not support image input"
+                          }
                           title={
                             modelCapabilities.image
                               ? "Supports image input"
@@ -2988,7 +3120,13 @@ export function App() {
                           </svg>
                         </span>
                         <span
-                          className={`cap-badge${modelCapabilities.tools ? " cap-active" : ""}`}
+                          className={`cap-badge${modelCapabilities.tools ? " cap-active" : " cap-unsupported"}`}
+                          role="img"
+                          aria-label={
+                            modelCapabilities.tools
+                              ? "Model supports tool calling"
+                              : "Model does not support tool calling"
+                          }
                           title={
                             modelCapabilities.tools
                               ? "Supports tool calling (fetch URL, web search)"
@@ -3009,7 +3147,13 @@ export function App() {
                           </svg>
                         </span>
                         <span
-                          className={`cap-badge${modelCapabilities.search ? " cap-active" : ""}`}
+                          className={`cap-badge${modelCapabilities.search ? " cap-active" : " cap-unsupported"}`}
+                          role="img"
+                          aria-label={
+                            modelCapabilities.search
+                              ? "Model includes built-in web search"
+                              : "Model does not include built-in web search"
+                          }
                           title={
                             modelCapabilities.search
                               ? "Built-in web search"
@@ -3031,6 +3175,18 @@ export function App() {
                           </svg>
                         </span>
                       </div>
+                      {shouldShowCloudModeSelector ? (
+                        <ThemedDropdown
+                          className="composer-cloud-mode-dropdown"
+                          value={cloudModeDraft}
+                          options={cloudModeOptions}
+                          placeholder="Mode"
+                          compact
+                          borderless
+                          menuDirection="up"
+                          onChange={setCloudModeDraft}
+                        />
+                      ) : null}
                       <button
                         type={isStreaming ? "button" : "submit"}
                         className={`send-btn${isStreaming ? " send-btn-stop" : ""}`}
@@ -3063,12 +3219,6 @@ export function App() {
                         <div className="composer-cloud-notes">
                           <p className="composer-cloud-note composer-cloud-note-error">
                             {selectedCloudProviderModelsError}
-                          </p>
-                        </div>
-                      ) : selectedPinnedModels.length === 0 ? (
-                        <div className="composer-cloud-notes">
-                          <p className="composer-cloud-note">
-                            Pick your cloud models in Settings.
                           </p>
                         </div>
                       ) : null

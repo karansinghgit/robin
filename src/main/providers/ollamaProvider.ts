@@ -28,6 +28,18 @@ interface PullProgressChunk {
   error?: string;
 }
 
+interface OllamaToolCallPayload {
+  function: { name: string; arguments: Record<string, unknown> };
+}
+
+interface OllamaChatChunk {
+  message?: {
+    content?: string;
+    tool_calls?: OllamaToolCallPayload[];
+  };
+  done?: boolean;
+}
+
 function decodeHtml(input: string): string {
   return input
     .replace(/&amp;/g, "&")
@@ -102,6 +114,72 @@ function buildBaseUrlCandidates(baseUrl: string): string[] {
 
 function formatReachabilityError(baseUrl: string): string {
   return `Could not reach Ollama at ${normalizeBaseUrl(baseUrl)}. Open Ollama (or run 'ollama serve') and try again.`;
+}
+
+async function formatStreamingError(
+  baseUrl: string,
+  response: Response
+): Promise<string> {
+  const location = normalizeBaseUrl(baseUrl);
+
+  if (!response.ok) {
+    let details = "";
+    try {
+      details = normalizeText(await response.text());
+    } catch {
+      details = "";
+    }
+
+    const detailSuffix = details ? ` ${details}` : "";
+    return `Ollama chat failed at ${location} with ${response.status} ${response.statusText}.${detailSuffix}`.trim();
+  }
+
+  return `Ollama replied from ${location}, but the response was not streamed. Check the base URL and any proxy in front of Ollama.`;
+}
+
+function mapOllamaToolCalls(toolCalls?: OllamaToolCallPayload[]): ToolCall[] {
+  if (!toolCalls?.length) {
+    return [];
+  }
+
+  return toolCalls.map((tc) => ({
+    id: `ollama-${randomUUID()}`,
+    name: tc.function.name,
+    arguments: JSON.stringify(tc.function.arguments)
+  }));
+}
+
+function applyChatChunk(
+  chunk: OllamaChatChunk,
+  onDelta: (delta: string) => void
+): ToolCall[] {
+  const delta = chunk.message?.content ?? "";
+  if (delta) {
+    onDelta(delta);
+  }
+  return mapOllamaToolCalls(chunk.message?.tool_calls);
+}
+
+function parseBufferedChatResponse(
+  rawBody: string,
+  onDelta: (delta: string) => void
+): ToolCall[] {
+  const trimmed = rawBody.trim();
+  if (!trimmed) {
+    throw new Error("Ollama returned an empty response.");
+  }
+
+  let responseToolCalls: ToolCall[] = [];
+  const lines = trimmed.split("\n").filter((line) => line.trim().length > 0);
+  for (const line of lines) {
+    const chunk = JSON.parse(line) as OllamaChatChunk;
+    const nextToolCalls = applyChatChunk(chunk, onDelta);
+    if (nextToolCalls.length > 0) {
+      responseToolCalls = nextToolCalls;
+    }
+  }
+
+  return responseToolCalls;
 }
 
 function resolveSelectedModel(
@@ -269,7 +347,7 @@ export class OllamaProvider {
           body: JSON.stringify(requestBody)
         });
         response = nextResponse;
-        if (response.ok && response.body) {
+        if (response.ok) {
           break;
         }
       } catch {
@@ -294,7 +372,7 @@ export class OllamaProvider {
             body: JSON.stringify(requestBody)
           });
           response = nextResponse;
-          if (response.ok && response.body) break;
+          if (response.ok) break;
         } catch {
           continue;
         }
@@ -305,8 +383,16 @@ export class OllamaProvider {
       throw new Error(formatReachabilityError(input.baseUrl));
     }
 
-    if (!response.ok || !response.body) {
-      throw new Error("Ollama did not return a streaming response.");
+    if (!response.ok) {
+      throw new Error(await formatStreamingError(input.baseUrl, response));
+    }
+
+    if (!response.body) {
+      const rawBody = await response.text();
+      return {
+        citations: [],
+        toolCalls: parseBufferedChatResponse(rawBody, input.onDelta)
+      };
     }
 
     const reader = response.body.getReader();
@@ -328,49 +414,19 @@ export class OllamaProvider {
         if (!trimmed) {
           continue;
         }
-        const chunk = JSON.parse(trimmed) as {
-          message?: {
-            content?: string;
-            tool_calls?: Array<{
-              function: { name: string; arguments: Record<string, unknown> };
-            }>;
-          };
-          done?: boolean;
-        };
-        const delta = chunk.message?.content ?? "";
-        if (delta) {
-          input.onDelta(delta);
-        }
-        if (chunk.message?.tool_calls?.length) {
-          responseToolCalls = chunk.message.tool_calls.map((tc) => ({
-            id: `ollama-${randomUUID()}`,
-            name: tc.function.name,
-            arguments: JSON.stringify(tc.function.arguments)
-          }));
+        const chunk = JSON.parse(trimmed) as OllamaChatChunk;
+        const nextToolCalls = applyChatChunk(chunk, input.onDelta);
+        if (nextToolCalls.length > 0) {
+          responseToolCalls = nextToolCalls;
         }
       }
     }
 
     if (buffer.trim()) {
-      const chunk = JSON.parse(buffer) as {
-        message?: {
-          content?: string;
-          tool_calls?: Array<{
-            function: { name: string; arguments: Record<string, unknown> };
-          }>;
-        };
-        done?: boolean;
-      };
-      const delta = chunk.message?.content ?? "";
-      if (delta) {
-        input.onDelta(delta);
-      }
-      if (chunk.message?.tool_calls?.length) {
-        responseToolCalls = chunk.message.tool_calls.map((tc) => ({
-          id: `ollama-${randomUUID()}`,
-          name: tc.function.name,
-          arguments: JSON.stringify(tc.function.arguments)
-        }));
+      const chunk = JSON.parse(buffer) as OllamaChatChunk;
+      const nextToolCalls = applyChatChunk(chunk, input.onDelta);
+      if (nextToolCalls.length > 0) {
+        responseToolCalls = nextToolCalls;
       }
     }
 

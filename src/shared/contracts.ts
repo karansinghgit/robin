@@ -120,6 +120,11 @@ export interface ProviderStatus {
 export interface CloudModelCatalogItem {
   id: string;
   modes: string[];
+  capabilities: {
+    image: boolean;
+    tools: boolean;
+    search: boolean;
+  };
 }
 
 export interface CloudModelCatalogResult {

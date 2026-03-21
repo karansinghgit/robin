@@ -8,6 +8,7 @@ import {
   ThreadSummary,
   TodoItem
 } from "../shared/contracts";
+import { reorderTodoForCompletion } from "../shared/todoOrdering";
 import { DEFAULT_SETTINGS, normalizeSettings, SettingsData } from "./settings";
 
 interface ThreadsFile {
@@ -187,12 +188,32 @@ export class AppStorage {
     const file = await this.readJson<TodosFile>(this.todosPath, { todos: [] });
     const todo = file.todos.find((t) => t.id === id);
     if (!todo) return null;
+    const now = new Date().toISOString();
     if (changes.title !== undefined) todo.title = changes.title;
-    if (changes.completed !== undefined) todo.completed = changes.completed;
     if (changes.order !== undefined) todo.order = changes.order;
-    todo.updatedAt = new Date().toISOString();
+    todo.updatedAt = now;
+
+    if (
+      changes.completed !== undefined &&
+      changes.completed !== todo.completed
+    ) {
+      const nextCompleted = changes.completed;
+      const nextTodos = reorderTodoForCompletion(
+        file.todos.map((entry) =>
+          entry.id === id
+            ? { ...entry, completed: nextCompleted, updatedAt: now }
+            : entry
+        ),
+        id,
+        nextCompleted
+      );
+      file.todos = nextTodos;
+    } else if (changes.completed !== undefined) {
+      todo.completed = changes.completed;
+    }
+
     await this.writeJson(this.todosPath, file);
-    return todo;
+    return file.todos.find((entry) => entry.id === id) ?? null;
   }
 
   async reorderTodos(orderedIds: string[]): Promise<TodoItem[]> {

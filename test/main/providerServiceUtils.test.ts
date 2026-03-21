@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ChatMessage } from "../../src/shared/contracts";
 import {
+  extractUrls,
+  isWeatherQuery,
   parseActions,
   prepareMessagesForAPI,
+  requiresLiveWebSearch,
   truncateContext
 } from "../../src/main/providerServiceUtils";
 
@@ -76,4 +79,27 @@ test("truncateContext drops oldest messages but preserves at least four", () => 
     truncated.map((entry) => entry.id),
     ["3", "4", "5", "6"]
   );
+});
+
+test("extractUrls returns unique cleaned urls", () => {
+  assert.deepEqual(
+    extractUrls(
+      "Read https://example.com/foo, then compare with https://example.com/foo."
+    ),
+    ["https://example.com/foo"]
+  );
+});
+
+test("requiresLiveWebSearch detects live/current-info prompts", () => {
+  assert.equal(
+    requiresLiveWebSearch("What is the weather in Calcutta right now?"),
+    true
+  );
+  assert.equal(requiresLiveWebSearch("Give me the latest Apple news"), true);
+  assert.equal(requiresLiveWebSearch("Rewrite this paragraph"), false);
+});
+
+test("isWeatherQuery detects weather prompts only", () => {
+  assert.equal(isWeatherQuery("What is the temperature in Delhi?"), true);
+  assert.equal(isWeatherQuery("Summarize my meeting notes"), false);
 });

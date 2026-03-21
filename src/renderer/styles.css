@@ -536,11 +536,8 @@ button:focus-visible {
 }
 
 .todo-main-item-dragging {
-  opacity: 0.74;
-}
-
-.todo-main-item-drag-over {
-  border-top: 2px solid var(--accent);
+  opacity: 0.42;
+  background: var(--raised);
 }
 
 .todo-drag-handle {
@@ -731,166 +728,127 @@ button:focus-visible {
 /* ── Error ──────────────────────────── */
 
 .warning-rail {
-  padding: 0 20px 10px;
+  padding: 0 16px 8px;
   flex-shrink: 0;
 }
 
-.transient-warning {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  border: 1px solid var(--warning-border);
-  background: linear-gradient(180deg, rgba(232, 152, 58, 0.12), var(--warning-bg));
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
+.status-banner {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 16px 0;
+  padding: 9px 10px;
+  max-width: min(520px, calc(100% - 32px));
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.01));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
-.transient-warning-copy {
+.status-banner-full-width {
+  display: flex;
+  align-self: stretch;
+  max-width: none;
+  width: calc(100% - 32px);
+}
+
+.warning-rail .status-banner {
+  margin: 0;
+  max-width: 100%;
+}
+
+.status-banner::before {
+  content: "";
+  width: 2px;
+  min-width: 2px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.status-banner-warning {
+  color: var(--warning-text);
+  border-color: rgba(232, 152, 58, 0.18);
+  background: linear-gradient(180deg, rgba(232, 152, 58, 0.09), rgba(232, 152, 58, 0.04));
+}
+
+.status-banner-error {
+  color: var(--red);
+  border-color: rgba(228, 88, 88, 0.18);
+  background: linear-gradient(180deg, rgba(228, 88, 88, 0.08), rgba(228, 88, 88, 0.04));
+}
+
+.status-banner-copy {
+  flex: 1;
   min-width: 0;
 }
 
-.transient-warning-label {
-  color: var(--warning-text);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.transient-warning-text {
-  margin-top: 2px;
-  color: #f7dfbf;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.transient-warning-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.transient-warning-countdown {
-  position: relative;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-}
-
-.transient-warning-ring {
-  position: absolute;
-  inset: 0;
-  width: 28px;
-  height: 28px;
-  transform: rotate(-90deg);
-}
-
-.transient-warning-ring-track,
-.transient-warning-ring-progress {
-  fill: none;
-  stroke-width: 2.5;
-}
-
-.transient-warning-ring-track {
-  stroke: rgba(243, 188, 114, 0.18);
-}
-
-.transient-warning-ring-progress {
-  stroke: var(--warning-text);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 120ms linear;
-}
-
-.transient-warning-count {
-  position: relative;
-  z-index: 1;
-  color: var(--warning-text);
+.status-banner-countdown {
+  min-width: 22px;
+  padding-top: 1px;
+  color: currentColor;
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
+  text-align: center;
+  opacity: 0.92;
 }
 
-.transient-warning-close {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border: none;
-  background: transparent;
-  color: rgba(243, 188, 114, 0.8);
-  padding: 0;
-  cursor: pointer;
-  transition: color 120ms ease, transform 120ms var(--ease);
-}
-
-.transient-warning-close svg {
-  width: 14px;
-  height: 14px;
+.status-banner-label {
   color: currentColor;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
-.transient-warning-close:hover {
-  color: #ffd39f;
-  transform: translateY(-1px);
-}
-
-.error-banner {
-  margin: 8px 16px 0;
-  padding: 8px 10px 8px 14px;
+.status-banner-text {
+  margin-top: 2px;
+  color: var(--t1);
   font-size: 12px;
-  color: var(--red);
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-border);
-  border-radius: 12px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  max-height: min(30vh, 220px);
+  line-height: 1.35;
+  max-height: min(24vh, 160px);
   overflow-y: auto;
 }
 
-.error-banner-text {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.45;
+.status-banner-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.error-banner-close {
-  width: 20px;
-  height: 20px;
+.status-banner-close {
+  width: 16px;
+  height: 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
-  color: var(--red);
+  color: currentColor;
   display: grid;
   place-items: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 100ms ease, color 100ms ease;
+  opacity: 0.76;
+  transition: background 100ms ease, opacity 100ms ease;
 }
 
-.error-banner-close:hover {
-  background: rgba(228, 88, 88, 0.12);
+.status-banner-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  opacity: 1;
 }
 
-.error-banner-close svg {
-  width: 12px;
-  height: 12px;
+.status-banner-close svg {
+  width: 10px;
+  height: 10px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
 }
 
-.error-banner-close:focus,
-.error-banner-close:focus-visible {
+.status-banner-close:focus,
+.status-banner-close:focus-visible {
   outline: none;
   box-shadow: none;
 }
@@ -2367,33 +2325,36 @@ button:focus-visible {
   min-width: 0;
 }
 .cap-badge {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  position: relative;
+  display: grid;
+  place-items: center;
   height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text-dim);
-  opacity: 0.52;
+  width: 24px;
+  color: var(--t3);
+  opacity: 0.68;
   cursor: default;
-  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
-  white-space: nowrap;
+  transition: opacity 0.15s, color 0.15s;
+}
+.cap-badge svg {
+  width: 14px;
+  height: 14px;
 }
 .cap-badge.cap-active {
-  opacity: 0.9;
+  opacity: 0.96;
   color: var(--accent);
-  border-color: rgba(196, 164, 108, 0.22);
-  background: rgba(196, 164, 108, 0.08);
+}
+.cap-badge.cap-unsupported::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(-42deg);
+  opacity: 0.95;
 }
 .cap-badge:hover {
   opacity: 1;
-}
-.cap-badge-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
 }
 
 /* ── Toggle Switch ───────────────────────────────────── */

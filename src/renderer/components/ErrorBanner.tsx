@@ -1,24 +1,27 @@
-import { IconClose } from "./icons";
+import { StatusBanner } from "./StatusBanner";
 
 export function ErrorBanner({
   message,
+  startedAt,
+  durationMs,
   onClose
 }: {
   message: string;
+  startedAt: number;
+  durationMs: number;
   onClose: () => void;
 }) {
   return (
-    <div className="error-banner" role="alert">
-      <p className="error-banner-text">{message}</p>
-      <button
-        type="button"
-        className="error-banner-close"
-        aria-label="Dismiss error"
-        title="Dismiss"
-        onClick={onClose}
-      >
-        <IconClose />
-      </button>
-    </div>
+    <StatusBanner
+      variant="error"
+      label="Error"
+      message={message}
+      onClose={onClose}
+      role="alert"
+      ariaLive="assertive"
+      startedAt={startedAt}
+      durationMs={durationMs}
+      fullWidth
+    />
   );
 }

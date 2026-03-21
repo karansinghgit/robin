@@ -76,6 +76,12 @@ type SettingsModeTab = "cloud" | "local";
 
 type SettingsSectionId = "models" | "shortcut" | "updates";
 
+const NO_MODEL_CAPABILITIES = {
+  image: false,
+  tools: false,
+  search: false
+} as const;
+
 const SHORTCUT_PRESETS = [
   { label: "Cmd/Ctrl + Shift + Space", value: "CommandOrControl+Shift+Space" },
   { label: "Cmd/Ctrl + Shift + K", value: "CommandOrControl+Shift+K" },
@@ -231,7 +237,6 @@ export function App() {
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoTitle, setEditingTodoTitle] = useState("");
   const [draggedTodoId, setDraggedTodoId] = useState<string | null>(null);
-  const [dragOverTodoId, setDragOverTodoId] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [noteTitleDraft, setNoteTitleDraft] = useState("");
@@ -286,7 +291,12 @@ export function App() {
     toolName: string;
     status: "calling" | "complete";
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    id: number;
+    message: string;
+    startedAt: number;
+    durationMs: number;
+  } | null>(null);
   const [appVersion, setAppVersion] = useState("");
   const [updatesChecking, setUpdatesChecking] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
@@ -296,6 +306,7 @@ export function App() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamSequenceRef = useRef(0);
   const activeStreamIdRef = useRef<string | null>(null);
   const pendingDeltasRef = useRef(new Map<string, string>());
@@ -321,6 +332,27 @@ export function App() {
     warningTimeoutRef.current = setTimeout(() => {
       setWarning((current) => (current?.id === id ? null : current));
       warningTimeoutRef.current = null;
+    }, durationMs);
+  }
+
+  function dismissError() {
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
+    setError(null);
+  }
+
+  function showError(message: string, durationMs = 10000) {
+    const startedAt = performance.now();
+    const id = startedAt;
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+    setError({ id, message, startedAt, durationMs });
+    errorTimeoutRef.current = setTimeout(() => {
+      setError((current) => (current?.id === id ? null : current));
+      errorTimeoutRef.current = null;
     }, durationMs);
   }
 
@@ -683,13 +715,11 @@ export function App() {
   async function handleTodoDrop(targetId: string) {
     if (!draggedTodoId || draggedTodoId === targetId) {
       setDraggedTodoId(null);
-      setDragOverTodoId(null);
       return;
     }
     const reordered = reorderTodoInGroup(todos, draggedTodoId, targetId);
     setTodos(reordered);
     setDraggedTodoId(null);
-    setDragOverTodoId(null);
     try {
       await getRobinBridge().todos.reorder(reordered.map((t) => t.id));
     } catch {
@@ -779,7 +809,7 @@ export function App() {
         await Promise.all([refreshStatus(), refreshThreads()]);
       } catch (loadError) {
         if (isActive) {
-          setError(errorMessage(loadError, "Could not load Robin state."));
+          showError(errorMessage(loadError, "Could not load Robin state."));
         }
       }
     })();
@@ -789,6 +819,10 @@ export function App() {
       if (warningTimeoutRef.current) {
         clearTimeout(warningTimeoutRef.current);
         warningTimeoutRef.current = null;
+      }
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+        errorTimeoutRef.current = null;
       }
     };
   }, []);
@@ -840,16 +874,24 @@ export function App() {
 
     const selectedIds = selectedCloudModelsDraft[provider] ?? [];
     const providerModels = cloudModelsByProvider[provider] ?? [];
-    const selectableModels =
+    const selectableModels: CloudModelCatalogItem[] =
       provider === "openrouter"
-        ? selectedIds.map((modelId) => ({ id: modelId, modes: [] }))
+        ? selectedIds.map((modelId) => ({
+            id: modelId,
+            modes: [],
+            capabilities: NO_MODEL_CAPABILITIES
+          }))
         : providerModels.length > 0
           ? selectedIds
               .map((modelId) =>
                 providerModels.find((model) => model.id === modelId)
               )
               .filter((model): model is CloudModelCatalogItem => Boolean(model))
-          : selectedIds.map((modelId) => ({ id: modelId, modes: [] }));
+          : selectedIds.map((modelId) => ({
+              id: modelId,
+              modes: [],
+              capabilities: NO_MODEL_CAPABILITIES
+            }));
 
     if (selectableModels.length === 0) {
       if (cloudModelDraft) {
@@ -909,7 +951,7 @@ export function App() {
         try {
           void getRobinBridge().app.togglePanel();
         } catch (bridgeError) {
-          setError(
+          showError(
             errorMessage(
               bridgeError,
               "Robin desktop bridge is unavailable. Please restart Robin."
@@ -960,9 +1002,9 @@ export function App() {
     setIsStreaming(false);
     setToolStatus(null);
     if (typeof nextError === "string") {
-      setError(nextError);
+      showError(nextError);
     } else {
-      setError(null);
+      dismissError();
     }
     setActiveThread((current) =>
       current
@@ -1002,14 +1044,14 @@ export function App() {
 
   async function persistConfig(patch: SaveConfigInput) {
     try {
-      setError(null);
+      dismissError();
       await getRobinBridge().providers.saveConfig({
         onboardingCompleted: true,
         ...patch
       });
       await refreshStatus();
     } catch (saveError) {
-      setError(errorMessage(saveError, "Could not save settings."));
+      showError(errorMessage(saveError, "Could not save settings."));
     }
   }
 
@@ -1234,14 +1276,14 @@ export function App() {
       return;
     }
     try {
-      setError(null);
+      dismissError();
       const result = await getRobinBridge().app.setShortcut(shortcut);
       setShortcutDraft(result.shortcut);
       if (!result.success) {
         showWarning("Shortcut in use.");
       }
     } catch (shortcutError) {
-      setError(errorMessage(shortcutError, "Could not set shortcut."));
+      showError(errorMessage(shortcutError, "Could not set shortcut."));
     }
   }
 
@@ -1292,7 +1334,7 @@ export function App() {
     }
 
     try {
-      setError(null);
+      dismissError();
       setPullingModel(targetModel);
       await getRobinBridge().ollama.pullModel(targetModel);
       const robin = getRobinBridge();
@@ -1313,7 +1355,7 @@ export function App() {
       await refreshStatus();
       await applyModelSelection(modelKey("local", targetModel));
     } catch (pullError) {
-      setError(errorMessage(pullError, `Could not download ${targetModel}.`));
+      showError(errorMessage(pullError, `Could not download ${targetModel}.`));
     } finally {
       setPullingModel(null);
     }
@@ -1336,7 +1378,7 @@ export function App() {
     }
 
     try {
-      setError(null);
+      dismissError();
       setLocalModelNotice(null);
       setDeletingModel(targetModel);
       await getRobinBridge().ollama.deleteModel(targetModel);
@@ -1357,7 +1399,7 @@ export function App() {
       }
       setLocalModelNotice(`${targetModel} deleted.`);
     } catch (deleteError) {
-      setError(errorMessage(deleteError, `Could not delete ${targetModel}.`));
+      showError(errorMessage(deleteError, `Could not delete ${targetModel}.`));
     } finally {
       setDeletingModel(null);
     }
@@ -1406,7 +1448,7 @@ export function App() {
     }
 
     if (nextAttachments.length > 0) {
-      setError(null);
+      dismissError();
       setPendingAttachments((current) => [...current, ...nextAttachments]);
     }
 
@@ -1470,7 +1512,7 @@ export function App() {
       showWarning("Image input is not supported in Local mode yet.");
       return;
     }
-    setError(null);
+    dismissError();
     const streamToken = streamSequenceRef.current + 1;
     streamSequenceRef.current = streamToken;
     const resetWatchdog = () => {
@@ -1561,7 +1603,7 @@ export function App() {
             setActiveThread({ ...thread });
             void refreshThreads(thread.id);
           },
-          onError: ({ message }) => {
+          onError: ({ message, threadId }) => {
             if (streamToken !== streamSequenceRef.current) {
               return;
             }
@@ -1573,10 +1615,10 @@ export function App() {
               clearTimeout(streamWatchdogRef.current);
               streamWatchdogRef.current = null;
             }
-            setError(
+            showError(
               errorMessage(new Error(message), "Could not complete request.")
             );
-            void refreshThreads(activeThread?.id);
+            void refreshThreads(threadId ?? activeThread?.id);
           }
         }
       );
@@ -1602,7 +1644,7 @@ export function App() {
       }
       setPrompt(text);
       setPendingAttachments(outgoingAttachments);
-      setError(
+      showError(
         errorMessage(streamError, "Could not start chat. Please retry.")
       );
     }
@@ -1618,7 +1660,7 @@ export function App() {
       await stopPendingResponse(undefined, false);
     }
     setActiveThread(null);
-    setError(null);
+    dismissError();
     setPendingAttachments([]);
     setScreen("chat");
   }
@@ -1634,14 +1676,14 @@ export function App() {
   async function deleteThread(id: string) {
     if (!confirm("Delete this conversation?")) return;
     try {
-      setError(null);
+      dismissError();
       await getRobinBridge().chat.deleteThread(id);
       if (activeThread?.id === id) {
         setActiveThread(null);
       }
       await refreshThreads();
     } catch (deleteError) {
-      setError(errorMessage(deleteError, "Could not delete chat."));
+      showError(errorMessage(deleteError, "Could not delete chat."));
     }
   }
 
@@ -1653,16 +1695,6 @@ export function App() {
         )
       : undefined;
   const isCloudProviderSelected = Boolean(selectedCloudProvider);
-
-  const modelCapabilities = (() => {
-    if (parsed.mode === "local") {
-      return { image: false, tools: false, search: false };
-    }
-    if (selectedCloudProvider === "perplexity") {
-      return { image: false, tools: false, search: true };
-    }
-    return { image: true, tools: true, search: false };
-  })();
   const selectedCloudProviderModels = selectedCloudProvider
     ? (cloudModelsByProvider[selectedCloudProvider] ?? [])
     : [];
@@ -1682,6 +1714,10 @@ export function App() {
   const selectedCloudModel = visibleCloudModels.find(
     (model) => model.id === cloudModelDraft
   );
+  const modelCapabilities =
+    parsed.mode === "local"
+      ? NO_MODEL_CAPABILITIES
+      : selectedCloudModel?.capabilities ?? NO_MODEL_CAPABILITIES;
   const cloudModeOptions: DropdownOption[] = (
     selectedCloudModel?.modes ?? []
   ).map((mode) => ({
@@ -1944,7 +1980,12 @@ export function App() {
               </header>
 
               {error ? (
-                <ErrorBanner message={error} onClose={() => setError(null)} />
+                <ErrorBanner
+                  message={error.message}
+                  startedAt={error.startedAt}
+                  durationMs={error.durationMs}
+                  onClose={dismissError}
+                />
               ) : null}
 
               <section className="settings-pane-scroll">
@@ -2674,13 +2715,10 @@ export function App() {
                   sortedTodos.map((todo) => (
                     <div
                       key={todo.id}
-                      className={`todo-main-item${dragOverTodoId === todo.id ? " todo-main-item-drag-over" : ""}${draggedTodoId === todo.id ? " todo-main-item-dragging" : ""}`}
+                      className={`todo-main-item${draggedTodoId === todo.id ? " todo-main-item-dragging" : ""}`}
                       onDragOver={(e) => {
                         e.preventDefault();
-                        setDragOverTodoId(todo.id);
-                      }}
-                      onDragLeave={() => {
-                        if (dragOverTodoId === todo.id) setDragOverTodoId(null);
+                        e.dataTransfer.dropEffect = "move";
                       }}
                       onDrop={(e) => {
                         e.preventDefault();
@@ -2688,7 +2726,6 @@ export function App() {
                       }}
                       onDragEnd={() => {
                         setDraggedTodoId(null);
-                        setDragOverTodoId(null);
                       }}
                     >
                       <button
@@ -2700,6 +2737,10 @@ export function App() {
                         onDragStart={(event) => {
                           event.dataTransfer.effectAllowed = "move";
                           event.dataTransfer.setData("text/plain", todo.id);
+                          const row = event.currentTarget.closest(".todo-main-item");
+                          if (row instanceof HTMLElement) {
+                            event.dataTransfer.setDragImage(row, 20, 20);
+                          }
                           setDraggedTodoId(todo.id);
                         }}
                       >
@@ -2861,7 +2902,12 @@ export function App() {
           ) : (
             <>
               {error ? (
-                <ErrorBanner message={error} onClose={() => setError(null)} />
+                <ErrorBanner
+                  message={error.message}
+                  startedAt={error.startedAt}
+                  durationMs={error.durationMs}
+                  onClose={dismissError}
+                />
               ) : null}
 
               <section
@@ -3044,7 +3090,13 @@ export function App() {
                       />
                       <div className="capability-badges">
                         <span
-                          className={`cap-badge${modelCapabilities.image ? " cap-active" : ""}`}
+                          className={`cap-badge${modelCapabilities.image ? " cap-active" : " cap-unsupported"}`}
+                          role="img"
+                          aria-label={
+                            modelCapabilities.image
+                              ? "Model supports image input"
+                              : "Model does not support image input"
+                          }
                           title={
                             modelCapabilities.image
                               ? "Supports image input"
@@ -3065,10 +3117,15 @@ export function App() {
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <path d="m21 15-5-5L5 21" />
                           </svg>
-                          <span className="cap-badge-label">Images</span>
                         </span>
                         <span
-                          className={`cap-badge${modelCapabilities.tools ? " cap-active" : ""}`}
+                          className={`cap-badge${modelCapabilities.tools ? " cap-active" : " cap-unsupported"}`}
+                          role="img"
+                          aria-label={
+                            modelCapabilities.tools
+                              ? "Model supports tool calling"
+                              : "Model does not support tool calling"
+                          }
                           title={
                             modelCapabilities.tools
                               ? "Supports tool calling (fetch URL, web search)"
@@ -3087,10 +3144,15 @@ export function App() {
                           >
                             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                           </svg>
-                          <span className="cap-badge-label">Tools</span>
                         </span>
                         <span
-                          className={`cap-badge${modelCapabilities.search ? " cap-active" : ""}`}
+                          className={`cap-badge${modelCapabilities.search ? " cap-active" : " cap-unsupported"}`}
+                          role="img"
+                          aria-label={
+                            modelCapabilities.search
+                              ? "Model includes built-in web search"
+                              : "Model does not include built-in web search"
+                          }
                           title={
                             modelCapabilities.search
                               ? "Built-in web search"
@@ -3110,7 +3172,6 @@ export function App() {
                             <circle cx="11" cy="11" r="8" />
                             <path d="m21 21-4.35-4.35" />
                           </svg>
-                          <span className="cap-badge-label">Search</span>
                         </span>
                       </div>
                       {shouldShowCloudModeSelector ? (

@@ -27,8 +27,11 @@ import { TodoContextProvider } from "./context/todoProvider";
 import { NotesContextProvider } from "./context/notesProvider";
 import { buildSystemPrompt } from "./context/assembler";
 import {
+  extractUrls,
+  isWeatherQuery,
   parseActions,
   prepareMessagesForAPI,
+  requiresLiveWebSearch,
   truncateContext
 } from "./providerServiceUtils";
 import { ToolRound, StreamReplyResult } from "./tools/types";
@@ -99,6 +102,8 @@ const MODEL_SETUP_WARNING =
   "You need to configure a model to use Robin. Download a local model or add a cloud provider key in Settings.";
 const LOCAL_IMAGE_UNSUPPORTED_WARNING =
   "Image input is not supported in Local mode yet. Switch to a cloud model.";
+const LOCAL_LIVE_DATA_SEARCH_REQUIRED_WARNING =
+  "Local mode needs Web Search enabled with a Brave Search API key for live/current questions. Enable it in Settings or switch to a cloud search model.";
 
 export class ProviderService {
   private readonly ollama = new OllamaProvider();
@@ -529,6 +534,9 @@ export class ProviderService {
     ]);
     const toolExecutors = buildToolExecutors(braveApiKey, settings.toolToggles);
     const toolDefs = getToolDefinitions(toolExecutors);
+    const toolExecutorByName = new Map(
+      toolExecutors.map((executor) => [executor.definition.name, executor])
+    );
 
     const onDelta = (delta: string) => {
       assistantMessage.content += delta;
@@ -672,6 +680,70 @@ export class ProviderService {
         if ((request.attachments?.length ?? 0) > 0) {
           throw new Error(LOCAL_IMAGE_UNSUPPORTED_WARNING);
         }
+        const localPrompt = request.prompt.trim();
+        const explicitUrls = extractUrls(localPrompt);
+        const needsLiveData = requiresLiveWebSearch(localPrompt);
+        const supplementalSections: string[] = [];
+
+        if (explicitUrls.length > 0) {
+          const fetchUrlExecutor = toolExecutorByName.get("fetch_url");
+          if (!fetchUrlExecutor) {
+            throw new Error(
+              "Local mode cannot read shared links because Fetch URL is disabled in Settings."
+            );
+          }
+
+          emitToolStatus("fetch_url", "calling");
+          const fetchedContent = await fetchUrlExecutor.execute({
+            url: explicitUrls[0]
+          });
+          emitToolStatus("fetch_url", "complete");
+
+          if (fetchedContent.startsWith("Error:")) {
+            throw new Error(fetchedContent.replace(/^Error:\s*/i, ""));
+          }
+
+          supplementalSections.push(
+            [
+              `## Source Content (${explicitUrls[0]})`,
+              "Use this fetched page content when answering the user's question.",
+              fetchedContent
+            ].join("\n")
+          );
+        }
+
+        if (needsLiveData) {
+          const webSearchExecutor = toolExecutorByName.get("web_search");
+          if (!webSearchExecutor) {
+            throw new Error(LOCAL_LIVE_DATA_SEARCH_REQUIRED_WARNING);
+          }
+
+          emitToolStatus("web_search", "calling");
+          const searchResults = await webSearchExecutor.execute({
+            query: localPrompt,
+            count: isWeatherQuery(localPrompt) ? 3 : 5
+          });
+          emitToolStatus("web_search", "complete");
+
+          if (searchResults.startsWith("Error:")) {
+            throw new Error(searchResults.replace(/^Error:\s*/i, ""));
+          }
+
+          supplementalSections.push(
+            [
+              "## Live Web Context",
+              "Use these search results as the authoritative source for current facts.",
+              searchResults
+            ].join("\n")
+          );
+
+          if (isWeatherQuery(localPrompt)) {
+            supplementalSections.push(
+              "## Weather Guard\nWhen the local time is nighttime, do not describe current conditions as sunny. Prefer neutral wording like clear, warm, humid, cloudy, or rainy unless the source explicitly describes the current moment otherwise."
+            );
+          }
+        }
+
         const ollamaStatus = await this.ollama.detect(
           providers.ollama.baseUrl,
           providers.ollama.model || undefined
@@ -699,7 +771,10 @@ export class ProviderService {
                 (message) => message.id !== assistantMessage.id
               )
             ),
-            systemPrompt: systemPrompt || undefined,
+            systemPrompt:
+              [systemPrompt, ...supplementalSections]
+                .filter((section) => Boolean(section && section.trim()))
+                .join("\n\n") || undefined,
             tools: toolDefs.length > 0 ? toolDefs : undefined,
             toolHistory: toolHistory.length > 0 ? toolHistory : undefined,
             onDelta
@@ -760,8 +835,11 @@ export class ProviderService {
       });
     } catch (error) {
       assistantMessage.status = "error";
-      assistantMessage.content =
-        assistantMessage.content || "I hit a snag before I could finish that.";
+      if (assistantMessage.content.trim().length === 0) {
+        thread.messages = thread.messages.filter(
+          (message) => message.id !== assistantMessage.id
+        );
+      }
       thread.updatedAt = isoNow();
       await this.storage.upsertThread(thread);
       emit({

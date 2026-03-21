@@ -76,3 +76,33 @@ export function truncateContext(
 
   return result;
 }
+
+export function extractUrls(content: string): string[] {
+  const matches = content.match(/https?:\/\/[^\s)]+/gi) ?? [];
+  return Array.from(
+    new Set(matches.map((entry) => entry.trim().replace(/[.,!?;:]+$/, "")))
+  );
+}
+
+export function isWeatherQuery(content: string): boolean {
+  return /\b(weather|forecast|temperature|rain|humidity|wind)\b/i.test(
+    content
+  );
+}
+
+export function requiresLiveWebSearch(content: string): boolean {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (
+    /\b(latest|current|currently|right now|today|tonight|this morning|this evening|now|news|forecast|live score|stock price|price today)\b/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+
+  return isWeatherQuery(normalized);
+}

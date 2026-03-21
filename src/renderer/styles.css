@@ -16,6 +16,9 @@
   --accent-soft: rgba(196, 164, 108, 0.08);
   --green: #3dd68c;
   --orange: #e8983a;
+  --warning-bg: rgba(232, 152, 58, 0.08);
+  --warning-border: rgba(232, 152, 58, 0.22);
+  --warning-text: #f3bc72;
   --red: #e45858;
   --danger-bg: rgba(228, 88, 88, 0.06);
   --danger-border: rgba(228, 88, 88, 0.16);
@@ -693,6 +696,114 @@ button:focus-visible {
 }
 
 /* ── Error ──────────────────────────── */
+
+.warning-rail {
+  padding: 0 20px 10px;
+  flex-shrink: 0;
+}
+
+.transient-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--warning-border);
+  background: linear-gradient(180deg, rgba(232, 152, 58, 0.12), var(--warning-bg));
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
+}
+
+.transient-warning-copy {
+  min-width: 0;
+}
+
+.transient-warning-label {
+  color: var(--warning-text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.transient-warning-text {
+  margin-top: 2px;
+  color: #f7dfbf;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.transient-warning-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.transient-warning-countdown {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+}
+
+.transient-warning-ring {
+  position: absolute;
+  inset: 0;
+  width: 28px;
+  height: 28px;
+  transform: rotate(-90deg);
+}
+
+.transient-warning-ring-track,
+.transient-warning-ring-progress {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.transient-warning-ring-track {
+  stroke: rgba(243, 188, 114, 0.18);
+}
+
+.transient-warning-ring-progress {
+  stroke: var(--warning-text);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 120ms linear;
+}
+
+.transient-warning-count {
+  position: relative;
+  z-index: 1;
+  color: var(--warning-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.transient-warning-close {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: rgba(243, 188, 114, 0.8);
+  padding: 0;
+  cursor: pointer;
+  transition: color 120ms ease, transform 120ms var(--ease);
+}
+
+.transient-warning-close svg {
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+}
+
+.transient-warning-close:hover {
+  color: #ffd39f;
+  transform: translateY(-1px);
+}
 
 .error-banner {
   margin: 8px 16px 0;

@@ -23,6 +23,7 @@ import {
 } from "./components/icons";
 import { SidebarFooter } from "./components/SidebarFooter";
 import { DropdownOption, ThemedDropdown } from "./components/ThemedDropdown";
+import { TransientWarning } from "./components/TransientWarning";
 import {
   buildCloudProviderStateMap,
   buildProviderDrafts,
@@ -201,6 +202,12 @@ function getRobinBridge(): RobinBridge {
 }
 
 export function App() {
+  const [warning, setWarning] = useState<{
+    id: number;
+    message: string;
+    startedAt: number;
+    durationMs: number;
+  } | null>(null);
   const [profileName, setProfileName] = useState("there");
   const [screen, setScreen] = useState<"chat" | "settings">("chat");
   const [settingsMode, setSettingsMode] = useState<SettingsModeTab>("cloud");
@@ -282,11 +289,34 @@ export function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamSequenceRef = useRef(0);
   const activeStreamIdRef = useRef<string | null>(null);
   const pendingDeltasRef = useRef(new Map<string, string>());
   const deltaFrameRef = useRef<number | null>(null);
+  const warnedAboutLegacyToolSettingsRef = useRef(false);
   const messages = activeThread?.messages ?? [];
+
+  function dismissWarning() {
+    if (warningTimeoutRef.current) {
+      clearTimeout(warningTimeoutRef.current);
+      warningTimeoutRef.current = null;
+    }
+    setWarning(null);
+  }
+
+  function showWarning(message: string, durationMs = 5000) {
+    const startedAt = performance.now();
+    const id = startedAt;
+    if (warningTimeoutRef.current) {
+      clearTimeout(warningTimeoutRef.current);
+    }
+    setWarning({ id, message, startedAt, durationMs });
+    warningTimeoutRef.current = setTimeout(() => {
+      setWarning((current) => (current?.id === id ? null : current));
+      warningTimeoutRef.current = null;
+    }, durationMs);
+  }
 
   function applyPendingDeltas() {
     if (pendingDeltasRef.current.size === 0) {
@@ -435,6 +465,10 @@ export function App() {
     ]);
     const nextStatus: ProviderStatus = {
       ...rawStatus,
+      toolToggles: {
+        fetchUrl: rawStatus.toolToggles?.fetchUrl !== false,
+        webSearch: rawStatus.toolToggles?.webSearch !== false
+      },
       cloudProviderKeys: normalizeCloudProviderKeys(
         rawStatus.cloudProviderKeys
       ),
@@ -443,6 +477,12 @@ export function App() {
         rawStatus.selectedCloudModels
       )
     };
+    if (!rawStatus.toolToggles && !warnedAboutLegacyToolSettingsRef.current) {
+      warnedAboutLegacyToolSettingsRef.current = true;
+      showWarning(
+        "Some older settings were missing. URL tool preferences were reset to defaults."
+      );
+    }
     setStatus(nextStatus);
     setProviderKeyDrafts(nextStatus.providerApiKeys);
     setSelectedCloudModelsDraft(nextStatus.selectedCloudModels);
@@ -748,6 +788,10 @@ export function App() {
 
     return () => {
       isActive = false;
+      if (warningTimeoutRef.current) {
+        clearTimeout(warningTimeoutRef.current);
+        warningTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -1021,7 +1065,7 @@ export function App() {
       next.model &&
       !localModelSet.has(next.model.toLowerCase())
     ) {
-      setError(
+      showWarning(
         `${next.model} is not downloaded yet. Download it first, then activate.`
       );
       return;
@@ -1032,7 +1076,7 @@ export function App() {
         (providerId) => providerId === next.model.trim().toLowerCase()
       );
       if (!nextCloudProvider) {
-        setError("Select a valid cloud provider.");
+        showWarning("Select a valid cloud provider.");
         return;
       }
       const nextCloudModel =
@@ -1054,7 +1098,7 @@ export function App() {
   async function applyComposerSelection(nextValue: string) {
     const parsedSelection = parseComposerValue(nextValue);
     if (parsedSelection.mode === "unknown") {
-      setError("Select a valid model.");
+      showWarning("Select a valid model.");
       return;
     }
 
@@ -1196,7 +1240,7 @@ export function App() {
       const result = await getRobinBridge().app.setShortcut(shortcut);
       setShortcutDraft(result.shortcut);
       if (!result.success) {
-        setError("Shortcut in use.");
+        showWarning("Shortcut in use.");
       }
     } catch (shortcutError) {
       setError(errorMessage(shortcutError, "Could not set shortcut."));
@@ -1234,7 +1278,7 @@ export function App() {
     setLocalModelNotice(null);
 
     if (ollamaStatus?.state === "not_installed") {
-      setError("Ollama is not installed yet. Opening download page.");
+      showWarning("Ollama is not installed yet. Opening download page.");
       try {
         await getRobinBridge().app.openExternal(OLLAMA_DOWNLOAD_URL);
       } catch {
@@ -1330,13 +1374,13 @@ export function App() {
       file.type.toLowerCase().startsWith("image/")
     );
     if (imageFiles.length === 0) {
-      setError("Only image files are supported.");
+      showWarning("Only image files are supported.");
       return;
     }
 
     const remainingSlots = MAX_IMAGE_ATTACHMENTS - pendingAttachments.length;
     if (remainingSlots <= 0) {
-      setError(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`);
+      showWarning(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images.`);
       return;
     }
 
@@ -1345,7 +1389,7 @@ export function App() {
 
     for (const file of accepted) {
       if (file.size > MAX_IMAGE_BYTES) {
-        setError(
+        showWarning(
           `"${file.name}" is too large. Use images under ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB.`
         );
         continue;
@@ -1359,7 +1403,7 @@ export function App() {
           dataUrl
         });
       } catch {
-        setError(`Could not read "${file.name}".`);
+        showWarning(`Could not read "${file.name}".`);
       }
     }
 
@@ -1369,7 +1413,9 @@ export function App() {
     }
 
     if (imageFiles.length > accepted.length) {
-      setError(`Only ${MAX_IMAGE_ATTACHMENTS} images can be attached at once.`);
+      showWarning(
+        `Only ${MAX_IMAGE_ATTACHMENTS} images can be attached at once.`
+      );
     }
   }
 
@@ -1382,7 +1428,7 @@ export function App() {
   async function sendPrompt() {
     if (!prompt.trim() && pendingAttachments.length === 0) return;
     if (isStreaming) {
-      setError("Response in progress. Press Stop first.");
+      showWarning("Response in progress. Press Stop first.");
       return;
     }
     const parsed = parseModelKey(activeModelDraft);
@@ -1394,23 +1440,23 @@ export function App() {
         : undefined;
 
     if (parsed.mode === "search" && !selectedCloudProvider) {
-      setError("Select a cloud model first.");
+      showWarning("Select a cloud model first.");
       return;
     }
     if (selectedCloudProvider) {
       const selectedModels =
         selectedCloudModelsDraft[selectedCloudProvider] ?? [];
       if (selectedModels.length === 0) {
-        setError("Select at least one cloud model in Settings first.");
+        showWarning("Select at least one cloud model in Settings first.");
         return;
       }
       if (!cloudModelDraft || !selectedModels.includes(cloudModelDraft)) {
-        setError("Pick one of your selected cloud models.");
+        showWarning("Pick one of your selected cloud models.");
         return;
       }
     }
     if (parsed.mode === "local" && ollamaStatus?.state === "not_installed") {
-      setError("Ollama is not installed yet. Opening download page.");
+      showWarning("Ollama is not installed yet. Opening download page.");
       try {
         await getRobinBridge().app.openExternal(OLLAMA_DOWNLOAD_URL);
       } catch {
@@ -1419,11 +1465,11 @@ export function App() {
       return;
     }
     if (parsed.mode === "local" && !parsed.model) {
-      setError("Select or download a local model first.");
+      showWarning("Select or download a local model first.");
       return;
     }
     if (parsed.mode === "local" && pendingAttachments.length > 0) {
-      setError("Image input is not supported in Local mode yet.");
+      showWarning("Image input is not supported in Local mode yet.");
       return;
     }
     setError(null);
@@ -1433,9 +1479,8 @@ export function App() {
       if (streamWatchdogRef.current) clearTimeout(streamWatchdogRef.current);
       streamWatchdogRef.current = setTimeout(() => {
         if (streamToken !== streamSequenceRef.current) return;
-        void stopPendingResponse(
-          "Model response timed out. Press Stop and retry."
-        );
+        showWarning("Model response timed out. Press Stop and retry.");
+        void stopPendingResponse();
       }, 60000);
     };
     resetWatchdog();
@@ -1764,6 +1809,17 @@ export function App() {
           </button>
         </div>
       </div>
+
+      {warning ? (
+        <div className="warning-rail">
+          <TransientWarning
+            message={warning.message}
+            startedAt={warning.startedAt}
+            durationMs={warning.durationMs}
+            onClose={dismissWarning}
+          />
+        </div>
+      ) : null}
 
       <div className="chat-workspace">
         <aside

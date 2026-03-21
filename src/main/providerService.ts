@@ -15,7 +15,8 @@ import {
   SaveConfigInput
 } from "../shared/contracts";
 import { SecureConfig } from "./secureConfig";
-import { AppStorage, buildThreadTitle, SettingsData } from "./storage";
+import { SettingsData } from "./settings";
+import { AppStorage, buildThreadTitle } from "./storage";
 import { OllamaProvider } from "./providers/ollamaProvider";
 import { OpenAIProvider } from "./providers/openaiProvider";
 import { PerplexityProvider } from "./providers/perplexityProvider";
@@ -25,8 +26,17 @@ import { CURATED_CLOUD_MODELS } from "./providers/curatedCloudModels";
 import { TodoContextProvider } from "./context/todoProvider";
 import { NotesContextProvider } from "./context/notesProvider";
 import { buildSystemPrompt } from "./context/assembler";
-import { ToolRound, StreamReplyResult, ToolExecutor } from "./tools/types";
-import { buildToolExecutors, getToolDefinitions, executeToolCalls } from "./tools/registry";
+import {
+  parseActions,
+  prepareMessagesForAPI,
+  truncateContext
+} from "./providerServiceUtils";
+import { ToolRound, StreamReplyResult } from "./tools/types";
+import {
+  buildToolExecutors,
+  getToolDefinitions,
+  executeToolCalls
+} from "./tools/registry";
 import os from "node:os";
 import { createHash } from "node:crypto";
 
@@ -57,7 +67,12 @@ function resolveProviderSettings(settings: SettingsData | undefined) {
     cloud: {
       activeProvider: "openai" as CloudProviderId,
       selectedModels: {} as Partial<Record<CloudProviderId, string[]>>,
-      catalogCache: {} as Partial<Record<CloudProviderId, { fetchedAt: string; models: CloudModelCatalogResult["models"] }>>
+      catalogCache: {} as Partial<
+        Record<
+          CloudProviderId,
+          { fetchedAt: string; models: CloudModelCatalogResult["models"] }
+        >
+      >
     },
     perplexity: { model: "openai/gpt-5-mini", preset: "pro-search" },
     ollama: { baseUrl: "http://localhost:11434", model: "" }
@@ -80,60 +95,10 @@ function resolveProviderSettings(settings: SettingsData | undefined) {
   };
 }
 
-function prepareMessagesForAPI(messages: ChatMessage[]): ChatMessage[] {
-  let lastUserIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "user") {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  return messages.map((msg, i) => {
-    if (msg.role === "user" && i !== lastUserIndex && msg.attachments?.length) {
-      return { ...msg, attachments: undefined };
-    }
-    return msg;
-  });
-}
-
-interface TodoAction {
-  type: "create_todo" | "complete_todo" | "uncomplete_todo";
-  id?: string;
-  title?: string;
-}
-
-function parseActions(content: string): { cleanContent: string; actions: TodoAction[] } {
-  const actionBlocks = content.match(/<action>[\s\S]*?<\/action>/g) ?? [];
-  const actions: TodoAction[] = [];
-  for (const block of actionBlocks) {
-    const json = block.replace(/<\/?action>/g, "").trim();
-    try {
-      const parsed = JSON.parse(json) as TodoAction;
-      if (parsed.type === "create_todo" || parsed.type === "complete_todo" || parsed.type === "uncomplete_todo") {
-        actions.push(parsed);
-      }
-    } catch {
-      // ignore malformed blocks
-    }
-  }
-  const cleanContent = content.replace(/<action>[\s\S]*?<\/action>/g, "").trimEnd();
-  return { cleanContent, actions };
-}
-
-function truncateContext(messages: ChatMessage[], maxChars = 100_000): ChatMessage[] {
-  let total = messages.reduce((sum, m) => sum + m.content.length, 0);
-  const result = [...messages];
-  while (total > maxChars && result.length > 4) {
-    const removed = result.shift()!;
-    total -= removed.content.length;
-  }
-  return result;
-}
-
 const MODEL_SETUP_WARNING =
   "You need to configure a model to use Robin. Download a local model or add a cloud provider key in Settings.";
-const LOCAL_IMAGE_UNSUPPORTED_WARNING = "Image input is not supported in Local mode yet. Switch to a cloud model.";
+const LOCAL_IMAGE_UNSUPPORTED_WARNING =
+  "Image input is not supported in Local mode yet. Switch to a cloud model.";
 
 export class ProviderService {
   private readonly ollama = new OllamaProvider();
@@ -141,13 +106,18 @@ export class ProviderService {
   private readonly perplexity = new PerplexityProvider();
   private readonly google = new GoogleProvider();
   private readonly openrouter = new OpenRouterProvider();
-  private readonly providerKeyValidationCache = new Map<CloudProviderId, {
-    keyHash: string;
-    valid: boolean;
-    checkedAt: number;
-  }>();
+  private readonly providerKeyValidationCache = new Map<
+    CloudProviderId,
+    {
+      keyHash: string;
+      valid: boolean;
+      checkedAt: number;
+    }
+  >();
 
-  private readonly contextProviders: Array<import("./context/types").ContextProvider>;
+  private readonly contextProviders: Array<
+    import("./context/types").ContextProvider
+  >;
 
   constructor(
     private readonly storage: AppStorage,
@@ -163,7 +133,11 @@ export class ProviderService {
     return createHash("sha256").update(value).digest("hex");
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 8000): Promise<Response> {
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs = 8000
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -176,15 +150,21 @@ export class ProviderService {
     }
   }
 
-  private async validateProviderKeyRemote(provider: CloudProviderId, apiKey: string): Promise<boolean> {
+  private async validateProviderKeyRemote(
+    provider: CloudProviderId,
+    apiKey: string
+  ): Promise<boolean> {
     try {
       if (provider === "openai") {
-        const response = await this.fetchWithTimeout("https://api.openai.com/v1/models", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${apiKey}`
+        const response = await this.fetchWithTimeout(
+          "https://api.openai.com/v1/models",
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`
+            }
           }
-        });
+        );
         return response.ok;
       }
 
@@ -196,34 +176,29 @@ export class ProviderService {
         return response.ok;
       }
 
-      if (provider === "anthropic") {
-        const response = await this.fetchWithTimeout("https://api.anthropic.com/v1/models", {
-          method: "GET",
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01"
-          }
-        });
-        return response.ok;
-      }
-
       if (provider === "perplexity") {
-        const response = await this.fetchWithTimeout("https://api.perplexity.ai/models", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${apiKey}`
+        const response = await this.fetchWithTimeout(
+          "https://api.perplexity.ai/models",
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`
+            }
           }
-        });
+        );
         return response.ok;
       }
 
       if (provider === "openrouter") {
-        const response = await this.fetchWithTimeout("https://openrouter.ai/api/v1/models", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${apiKey}`
+        const response = await this.fetchWithTimeout(
+          "https://openrouter.ai/api/v1/models",
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`
+            }
           }
-        });
+        );
         return response.ok;
       }
     } catch {
@@ -233,10 +208,17 @@ export class ProviderService {
     return false;
   }
 
-  private async isProviderKeyValid(provider: CloudProviderId, apiKey: string): Promise<boolean> {
+  private async isProviderKeyValid(
+    provider: CloudProviderId,
+    apiKey: string
+  ): Promise<boolean> {
     const keyHash = this.keyHash(apiKey);
     const cached = this.providerKeyValidationCache.get(provider);
-    if (cached && cached.keyHash === keyHash && (Date.now() - cached.checkedAt) < 10 * 60 * 1000) {
+    if (
+      cached &&
+      cached.keyHash === keyHash &&
+      Date.now() - cached.checkedAt < 10 * 60 * 1000
+    ) {
       return cached.valid;
     }
 
@@ -249,7 +231,9 @@ export class ProviderService {
     return valid;
   }
 
-  private async getValidProviderMap(providerApiKeys: Record<CloudProviderId, string>): Promise<Record<CloudProviderId, boolean>> {
+  private async getValidProviderMap(
+    providerApiKeys: Record<CloudProviderId, string>
+  ): Promise<Record<CloudProviderId, boolean>> {
     const checks = await Promise.all(
       CLOUD_PROVIDER_IDS.map(async (providerId) => {
         const apiKey = providerApiKeys[providerId]?.trim();
@@ -261,10 +245,13 @@ export class ProviderService {
       })
     );
 
-    return checks.reduce((result, [providerId, valid]) => {
-      result[providerId] = valid;
-      return result;
-    }, {} as Record<CloudProviderId, boolean>);
+    return checks.reduce(
+      (result, [providerId, valid]) => {
+        result[providerId] = valid;
+        return result;
+      },
+      {} as Record<CloudProviderId, boolean>
+    );
   }
 
   async getStatus(): Promise<ProviderStatus> {
@@ -281,29 +268,37 @@ export class ProviderService {
       onboardingCompleted: settings.onboardingCompleted,
       preferredMode: settings.preferredMode,
       shortcut: settings.shortcut,
-      systemMemoryGb: Number((os.totalmem() / (1024 ** 3)).toFixed(1)),
+      systemMemoryGb: Number((os.totalmem() / 1024 ** 3).toFixed(1)),
       activeCloudProvider: providers.cloud.activeProvider,
       cloudProviderKeys,
       providerApiKeys,
-      selectedCloudModels: CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
-        const selected = providers.cloud.selectedModels?.[providerId];
-        result[providerId] = Array.isArray(selected) ? selected : [];
-        return result;
-      }, {} as Record<CloudProviderId, string[]>),
+      selectedCloudModels: CLOUD_PROVIDER_IDS.reduce(
+        (result, providerId) => {
+          const selected = providers.cloud.selectedModels?.[providerId];
+          result[providerId] = Array.isArray(selected) ? selected : [];
+          return result;
+        },
+        {} as Record<CloudProviderId, string[]>
+      ),
       perplexity: {
         configured: cloudProviderKeys.perplexity,
         model: providers.perplexity.model,
         preset: providers.perplexity.preset
       },
       ollama,
-      braveSearchKeyConfigured: Boolean(await this.secureConfig.getToolApiKey("brave")),
+      braveSearchKeyConfigured: Boolean(
+        await this.secureConfig.getToolApiKey("brave")
+      ),
       toolToggles: settings.toolToggles
     };
   }
 
   async saveConfig(config: SaveConfigInput): Promise<ProviderStatus> {
     if (config.perplexityApiKey) {
-      await this.secureConfig.setProviderApiKey("perplexity", config.perplexityApiKey);
+      await this.secureConfig.setProviderApiKey(
+        "perplexity",
+        config.perplexityApiKey
+      );
     }
 
     if (typeof config.braveSearchApiKey === "string") {
@@ -320,7 +315,9 @@ export class ProviderService {
         if (typeof candidate === "string") {
           const normalized = candidate.trim();
           if (normalized) {
-            saves.push(this.secureConfig.setProviderApiKey(providerId, normalized));
+            saves.push(
+              this.secureConfig.setProviderApiKey(providerId, normalized)
+            );
           } else {
             saves.push(this.secureConfig.clearProviderApiKey(providerId));
           }
@@ -334,12 +331,15 @@ export class ProviderService {
 
     await this.storage.saveSettings((current) => ({
       ...current,
-      onboardingCompleted: config.onboardingCompleted ?? current.onboardingCompleted,
+      onboardingCompleted:
+        config.onboardingCompleted ?? current.onboardingCompleted,
       preferredMode: config.preferredMode ?? current.preferredMode,
       shortcut: config.shortcut ?? current.shortcut,
       providers: {
         cloud: {
-          activeProvider: config.activeCloudProvider ?? current.providers.cloud.activeProvider,
+          activeProvider:
+            config.activeCloudProvider ??
+            current.providers.cloud.activeProvider,
           selectedModels: (() => {
             const selectedFromConfig = config.selectedCloudModels;
             if (!selectedFromConfig) {
@@ -358,7 +358,9 @@ export class ProviderService {
               const normalized = Array.from(
                 new Set(
                   candidate
-                    .filter((value): value is string => typeof value === "string")
+                    .filter(
+                      (value): value is string => typeof value === "string"
+                    )
                     .map((value) => value.trim())
                     .filter(Boolean)
                 )
@@ -385,7 +387,8 @@ export class ProviderService {
       },
       toolToggles: {
         fetchUrl: config.toolToggles?.fetchUrl ?? current.toolToggles.fetchUrl,
-        webSearch: config.toolToggles?.webSearch ?? current.toolToggles.webSearch
+        webSearch:
+          config.toolToggles?.webSearch ?? current.toolToggles.webSearch
       }
     }));
 
@@ -395,7 +398,10 @@ export class ProviderService {
   async detectOllama() {
     const settings = await this.storage.getSettings();
     const providers = resolveProviderSettings(settings);
-    return this.ollama.detect(providers.ollama.baseUrl, providers.ollama.model || undefined);
+    return this.ollama.detect(
+      providers.ollama.baseUrl,
+      providers.ollama.model || undefined
+    );
   }
 
   async listOllamaCatalog(limit = 100): Promise<LocalModelCatalogItem[]> {
@@ -411,13 +417,20 @@ export class ProviderService {
     );
 
     if (ollamaStatus.state === "not_installed") {
-      throw new Error("Ollama is not installed yet. Install it from ollama.com/download and retry.");
+      throw new Error(
+        "Ollama is not installed yet. Install it from ollama.com/download and retry."
+      );
     }
     if (ollamaStatus.state === "not_running") {
-      throw new Error(`Could not reach Ollama at ${ollamaStatus.baseUrl}. Open Ollama (or run 'ollama serve') and retry.`);
+      throw new Error(
+        `Could not reach Ollama at ${ollamaStatus.baseUrl}. Open Ollama (or run 'ollama serve') and retry.`
+      );
     }
 
-    return this.ollama.pullModel(ollamaStatus.baseUrl || providers.ollama.baseUrl, model);
+    return this.ollama.pullModel(
+      ollamaStatus.baseUrl || providers.ollama.baseUrl,
+      model
+    );
   }
 
   async deleteOllamaModel(model: string): Promise<ModelDeleteResult> {
@@ -432,13 +445,20 @@ export class ProviderService {
       throw new Error("Ollama is not installed yet.");
     }
     if (ollamaStatus.state === "not_running") {
-      throw new Error(`Could not reach Ollama at ${ollamaStatus.baseUrl}. Open Ollama (or run 'ollama serve') and retry.`);
+      throw new Error(
+        `Could not reach Ollama at ${ollamaStatus.baseUrl}. Open Ollama (or run 'ollama serve') and retry.`
+      );
     }
 
-    return this.ollama.deleteModel(ollamaStatus.baseUrl || providers.ollama.baseUrl, model);
+    return this.ollama.deleteModel(
+      ollamaStatus.baseUrl || providers.ollama.baseUrl,
+      model
+    );
   }
 
-  async listCloudModels(provider: CloudProviderId): Promise<CloudModelCatalogResult> {
+  async listCloudModels(
+    provider: CloudProviderId
+  ): Promise<CloudModelCatalogResult> {
     const apiKey = await this.secureConfig.getProviderApiKey(provider);
     if (!apiKey) {
       throw new Error(MODEL_SETUP_WARNING);
@@ -467,11 +487,19 @@ export class ProviderService {
   ): Promise<void> {
     const settings = await this.storage.getSettings();
     const providers = resolveProviderSettings(settings);
-    const currentThread =
-      request.conversationId ? await this.storage.loadThread(request.conversationId) : null;
-    const userMessage = createMessage("user", request.prompt, "complete", request.attachments);
+    const currentThread = request.conversationId
+      ? await this.storage.loadThread(request.conversationId)
+      : null;
+    const userMessage = createMessage(
+      "user",
+      request.prompt,
+      "complete",
+      request.attachments
+    );
     const assistantMessage = createMessage("assistant", "", "streaming");
-    const seedTitle = request.prompt.trim() || (request.attachments?.length ? "Image" : "New chat");
+    const seedTitle =
+      request.prompt.trim() ||
+      (request.attachments?.length ? "Image" : "New chat");
     const thread: ConversationThread = currentThread ?? {
       id: crypto.randomUUID(),
       title: buildThreadTitle(seedTitle),
@@ -504,11 +532,27 @@ export class ProviderService {
 
     const onDelta = (delta: string) => {
       assistantMessage.content += delta;
-      emit({ streamId, type: "delta", threadId: thread.id, messageId: assistantMessage.id, delta });
+      emit({
+        streamId,
+        type: "delta",
+        threadId: thread.id,
+        messageId: assistantMessage.id,
+        delta
+      });
     };
 
-    const emitToolStatus = (toolName: string, status: "calling" | "complete") => {
-      emit({ streamId, type: "tool_status", threadId: thread.id, messageId: assistantMessage.id, toolName, status });
+    const emitToolStatus = (
+      toolName: string,
+      status: "calling" | "complete"
+    ) => {
+      emit({
+        streamId,
+        type: "tool_status",
+        threadId: thread.id,
+        messageId: assistantMessage.id,
+        toolName,
+        status
+      });
     };
 
     const runToolLoop = async (
@@ -530,21 +574,28 @@ export class ProviderService {
 
     try {
       if (request.mode === "search") {
-        const requestedCloudProvider = request.cloudProvider ?? providers.cloud.activeProvider;
+        const requestedCloudProvider =
+          request.cloudProvider ?? providers.cloud.activeProvider;
         const streamMessages = truncateContext(
           prepareMessagesForAPI(
-            thread.messages.filter((message) => message.id !== assistantMessage.id)
+            thread.messages.filter(
+              (message) => message.id !== assistantMessage.id
+            )
           )
         );
 
         if (requestedCloudProvider === "openai") {
           const apiKey = await this.secureConfig.getProviderApiKey("openai");
           if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
-          const preferredSelectedOpenAIModel = providers.cloud.selectedModels.openai?.[0];
+          const preferredSelectedOpenAIModel =
+            providers.cloud.selectedModels.openai?.[0];
           const { citations } = await runToolLoop((toolHistory) =>
             this.openai.streamReply({
               apiKey,
-              model: request.cloudModel?.trim() || preferredSelectedOpenAIModel || "gpt-5-mini",
+              model:
+                request.cloudModel?.trim() ||
+                preferredSelectedOpenAIModel ||
+                "gpt-5-mini",
               mode: request.cloudMode?.trim() || undefined,
               messages: streamMessages,
               systemPrompt: systemPrompt || undefined,
@@ -555,12 +606,17 @@ export class ProviderService {
           );
           finalCitations = citations;
         } else if (requestedCloudProvider === "perplexity") {
-          const apiKey = await this.secureConfig.getProviderApiKey("perplexity");
+          const apiKey =
+            await this.secureConfig.getProviderApiKey("perplexity");
           if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
-          const preferredSelectedPerplexityModel = providers.cloud.selectedModels.perplexity?.[0];
+          const preferredSelectedPerplexityModel =
+            providers.cloud.selectedModels.perplexity?.[0];
           const result = await this.perplexity.streamReply({
             apiKey,
-            model: request.cloudModel?.trim() || preferredSelectedPerplexityModel || providers.perplexity.model,
+            model:
+              request.cloudModel?.trim() ||
+              preferredSelectedPerplexityModel ||
+              providers.perplexity.model,
             preset: providers.perplexity.preset,
             messages: streamMessages,
             systemPrompt: systemPrompt || undefined,
@@ -570,11 +626,15 @@ export class ProviderService {
         } else if (requestedCloudProvider === "google") {
           const apiKey = await this.secureConfig.getProviderApiKey("google");
           if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
-          const preferredSelectedGoogleModel = providers.cloud.selectedModels.google?.[0];
+          const preferredSelectedGoogleModel =
+            providers.cloud.selectedModels.google?.[0];
           const { citations } = await runToolLoop((toolHistory) =>
             this.google.streamReply({
               apiKey,
-              model: request.cloudModel?.trim() || preferredSelectedGoogleModel || "gemini-2.5-flash",
+              model:
+                request.cloudModel?.trim() ||
+                preferredSelectedGoogleModel ||
+                "gemini-2.5-flash",
               messages: streamMessages,
               systemPrompt: systemPrompt || undefined,
               tools: toolDefs.length > 0 ? toolDefs : undefined,
@@ -584,11 +644,15 @@ export class ProviderService {
           );
           finalCitations = citations;
         } else if (requestedCloudProvider === "openrouter") {
-          const apiKey = await this.secureConfig.getProviderApiKey("openrouter");
+          const apiKey =
+            await this.secureConfig.getProviderApiKey("openrouter");
           if (!apiKey) throw new Error(MODEL_SETUP_WARNING);
-          const preferredSelectedOpenRouterModel = providers.cloud.selectedModels.openrouter?.[0];
-          const model = request.cloudModel?.trim() || preferredSelectedOpenRouterModel;
-          if (!model) throw new Error("Add an OpenRouter model ID in Settings first.");
+          const preferredSelectedOpenRouterModel =
+            providers.cloud.selectedModels.openrouter?.[0];
+          const model =
+            request.cloudModel?.trim() || preferredSelectedOpenRouterModel;
+          if (!model)
+            throw new Error("Add an OpenRouter model ID in Settings first.");
           const { citations } = await runToolLoop((toolHistory) =>
             this.openrouter.streamReply({
               apiKey,
@@ -612,20 +676,28 @@ export class ProviderService {
           providers.ollama.baseUrl,
           providers.ollama.model || undefined
         );
-        if (ollamaStatus.state === "not_installed") throw new Error("Ollama is not installed yet.");
-        if (ollamaStatus.state === "not_running") throw new Error("Ollama is installed but not running.");
-        if (ollamaStatus.state === "no_model" || !ollamaStatus.selectedModel) throw new Error("Download an Ollama model before using Local mode.");
+        if (ollamaStatus.state === "not_installed")
+          throw new Error("Ollama is not installed yet.");
+        if (ollamaStatus.state === "not_running")
+          throw new Error("Ollama is installed but not running.");
+        if (ollamaStatus.state === "no_model" || !ollamaStatus.selectedModel)
+          throw new Error("Download an Ollama model before using Local mode.");
         const preferredLocalModel = providers.ollama.model?.trim();
-        const resolvedLocalModel = preferredLocalModel && ollamaStatus.models.includes(preferredLocalModel)
-          ? preferredLocalModel
-          : ollamaStatus.selectedModel;
-        if (!resolvedLocalModel) throw new Error("Download an Ollama model before using Local mode.");
+        const resolvedLocalModel =
+          preferredLocalModel &&
+          ollamaStatus.models.includes(preferredLocalModel)
+            ? preferredLocalModel
+            : ollamaStatus.selectedModel;
+        if (!resolvedLocalModel)
+          throw new Error("Download an Ollama model before using Local mode.");
         const { citations } = await runToolLoop((toolHistory) =>
           this.ollama.streamReply({
             baseUrl: providers.ollama.baseUrl,
             model: resolvedLocalModel,
             messages: truncateContext(
-              thread.messages.filter((message) => message.id !== assistantMessage.id)
+              thread.messages.filter(
+                (message) => message.id !== assistantMessage.id
+              )
             ),
             systemPrompt: systemPrompt || undefined,
             tools: toolDefs.length > 0 ? toolDefs : undefined,
@@ -688,7 +760,8 @@ export class ProviderService {
       });
     } catch (error) {
       assistantMessage.status = "error";
-      assistantMessage.content = assistantMessage.content || "I hit a snag before I could finish that.";
+      assistantMessage.content =
+        assistantMessage.content || "I hit a snag before I could finish that.";
       thread.updatedAt = isoNow();
       await this.storage.upsertThread(thread);
       emit({
@@ -696,9 +769,9 @@ export class ProviderService {
         type: "error",
         threadId: thread.id,
         messageId: assistantMessage.id,
-        message: error instanceof Error ? error.message : "Unknown provider error."
+        message:
+          error instanceof Error ? error.message : "Unknown provider error."
       });
     }
   }
-
 }

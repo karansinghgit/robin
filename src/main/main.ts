@@ -4,7 +4,13 @@ import { AppStorage } from "./storage";
 import { SecureConfig } from "./secureConfig";
 import { PlatformShell } from "./platformShell";
 import { ProviderService } from "./providerService";
-import { ChatStreamEvent, ChatStreamRequest, CloudProviderId, SaveConfigInput, UpdateCheckResult } from "../shared/contracts";
+import {
+  ChatStreamEvent,
+  ChatStreamRequest,
+  CloudProviderId,
+  SaveConfigInput,
+  UpdateCheckResult
+} from "../shared/contracts";
 
 const IPC_CHANNELS = {
   togglePanel: "app:toggle-panel",
@@ -67,10 +73,14 @@ function resolveUpdatesRepo(): string {
   return DEFAULT_UPDATES_REPO;
 }
 
-function findPreferredDownloadUrl(assets: Array<{ browser_download_url?: string; name?: string }>): string | undefined {
+function findPreferredDownloadUrl(
+  assets: Array<{ browser_download_url?: string; name?: string }>
+): string | undefined {
   const candidates = assets
     .map((asset) => asset.browser_download_url)
-    .filter((url): url is string => typeof url === "string" && url.trim().length > 0);
+    .filter(
+      (url): url is string => typeof url === "string" && url.trim().length > 0
+    );
 
   if (candidates.length === 0) {
     return undefined;
@@ -79,39 +89,48 @@ function findPreferredDownloadUrl(assets: Array<{ browser_download_url?: string;
   const lowered = candidates.map((url) => ({ url, lower: url.toLowerCase() }));
 
   if (process.platform === "darwin") {
-    return lowered.find((entry) => entry.lower.endsWith(".dmg"))?.url
-      ?? lowered.find((entry) => entry.lower.endsWith(".zip"))?.url
-      ?? lowered[0].url;
+    return (
+      lowered.find((entry) => entry.lower.endsWith(".dmg"))?.url ??
+      lowered.find((entry) => entry.lower.endsWith(".zip"))?.url ??
+      lowered[0].url
+    );
   }
 
   if (process.platform === "win32") {
-    return lowered.find((entry) => entry.lower.endsWith(".exe"))?.url
-      ?? lowered.find((entry) => entry.lower.endsWith(".msi"))?.url
-      ?? lowered[0].url;
+    return (
+      lowered.find((entry) => entry.lower.endsWith(".exe"))?.url ??
+      lowered.find((entry) => entry.lower.endsWith(".msi"))?.url ??
+      lowered[0].url
+    );
   }
 
-  return lowered.find((entry) => entry.lower.endsWith(".appimage"))?.url
-    ?? lowered.find((entry) => entry.lower.endsWith(".deb"))?.url
-    ?? lowered.find((entry) => entry.lower.endsWith(".rpm"))?.url
-    ?? lowered[0].url;
+  return (
+    lowered.find((entry) => entry.lower.endsWith(".appimage"))?.url ??
+    lowered.find((entry) => entry.lower.endsWith(".deb"))?.url ??
+    lowered.find((entry) => entry.lower.endsWith(".rpm"))?.url ??
+    lowered[0].url
+  );
 }
 
 async function checkForUpdates(): Promise<UpdateCheckResult> {
   const currentVersion = normalizeVersion(app.getVersion());
   const repo = resolveUpdatesRepo();
-  const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-    method: "GET",
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "Robin-App"
+  const response = await fetch(
+    `https://api.github.com/repos/${repo}/releases/latest`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "Robin-App"
+      }
     }
-  });
+  );
 
   if (!response.ok) {
     throw new Error(`Could not check updates (${response.status}).`);
   }
 
-  const payload = await response.json() as {
+  const payload = (await response.json()) as {
     tag_name?: string;
     html_url?: string;
     published_at?: string;
@@ -127,7 +146,10 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
     updateAvailable,
     releaseUrl: payload.html_url,
     downloadUrl: findPreferredDownloadUrl(assets),
-    publishedAt: typeof payload.published_at === "string" ? payload.published_at : undefined,
+    publishedAt:
+      typeof payload.published_at === "string"
+        ? payload.published_at
+        : undefined,
     checkedAt: new Date().toISOString()
   };
 }
@@ -149,7 +171,8 @@ function toDisplayName(raw: string): string {
 
 function getProfileName(): string {
   try {
-    const username = os.userInfo().username || process.env.USER || process.env.USERNAME || "";
+    const username =
+      os.userInfo().username || process.env.USER || process.env.USERNAME || "";
     return toDisplayName(username);
   } catch {
     return "there";
@@ -252,48 +275,105 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle(IPC_CHANNELS.profile, async () => ({
     name: getProfileName()
   }));
-  ipcMain.handle(IPC_CHANNELS.version, async () => normalizeVersion(app.getVersion()));
+  ipcMain.handle(IPC_CHANNELS.version, async () =>
+    normalizeVersion(app.getVersion())
+  );
   ipcMain.handle(IPC_CHANNELS.checkUpdates, async () => checkForUpdates());
   ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, url: string) => {
     await electronShell.openExternal(url);
   });
 
   ipcMain.handle(IPC_CHANNELS.listThreads, async () => storage.listThreads());
-  ipcMain.handle(IPC_CHANNELS.loadThread, async (_event, id: string) => storage.loadThread(id));
-  ipcMain.handle(IPC_CHANNELS.deleteThread, async (_event, id: string) => storage.deleteThread(id));
-  ipcMain.handle(IPC_CHANNELS.stopStream, async (_event, payload?: { threadId?: string }) => {
-    await storage.finalizeStreamingMessages(payload?.threadId);
-  });
-  ipcMain.handle(IPC_CHANNELS.providerStatus, async () => providerService.getStatus());
-  ipcMain.handle(IPC_CHANNELS.saveConfig, async (_event, config: SaveConfigInput) => providerService.saveConfig(config));
-  ipcMain.handle(IPC_CHANNELS.listCloudModels, async (_event, provider: CloudProviderId) => {
-    return providerService.listCloudModels(provider);
-  });
-  ipcMain.handle(IPC_CHANNELS.ollamaDetect, async () => providerService.detectOllama());
-  ipcMain.handle(IPC_CHANNELS.ollamaCatalog, async (_event, limit?: number) => providerService.listOllamaCatalog(limit));
-  ipcMain.handle(IPC_CHANNELS.ollamaPull, async (_event, model: string) => providerService.pullOllamaModel(model));
-  ipcMain.handle(IPC_CHANNELS.ollamaDelete, async (_event, model: string) => providerService.deleteOllamaModel(model));
+  ipcMain.handle(IPC_CHANNELS.loadThread, async (_event, id: string) =>
+    storage.loadThread(id)
+  );
+  ipcMain.handle(IPC_CHANNELS.deleteThread, async (_event, id: string) =>
+    storage.deleteThread(id)
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.stopStream,
+    async (_event, payload?: { threadId?: string }) => {
+      await storage.finalizeStreamingMessages(payload?.threadId);
+    }
+  );
+  ipcMain.handle(IPC_CHANNELS.providerStatus, async () =>
+    providerService.getStatus()
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.saveConfig,
+    async (_event, config: SaveConfigInput) =>
+      providerService.saveConfig(config)
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.listCloudModels,
+    async (_event, provider: CloudProviderId) => {
+      return providerService.listCloudModels(provider);
+    }
+  );
+  ipcMain.handle(IPC_CHANNELS.ollamaDetect, async () =>
+    providerService.detectOllama()
+  );
+  ipcMain.handle(IPC_CHANNELS.ollamaCatalog, async (_event, limit?: number) =>
+    providerService.listOllamaCatalog(limit)
+  );
+  ipcMain.handle(IPC_CHANNELS.ollamaPull, async (_event, model: string) =>
+    providerService.pullOllamaModel(model)
+  );
+  ipcMain.handle(IPC_CHANNELS.ollamaDelete, async (_event, model: string) =>
+    providerService.deleteOllamaModel(model)
+  );
 
   ipcMain.handle(IPC_CHANNELS.todosList, async () => storage.listTodos());
-  ipcMain.handle(IPC_CHANNELS.todosCreate, async (_event, title: string) => storage.createTodo(title));
-  ipcMain.handle(IPC_CHANNELS.todosUpdate, async (_event, id: string, changes: Partial<{ title: string; completed: boolean; order: number }>) => storage.updateTodo(id, changes));
-  ipcMain.handle(IPC_CHANNELS.todosReorder, async (_event, orderedIds: string[]) => storage.reorderTodos(orderedIds));
-  ipcMain.handle(IPC_CHANNELS.todosDelete, async (_event, id: string) => storage.deleteTodo(id));
+  ipcMain.handle(IPC_CHANNELS.todosCreate, async (_event, title: string) =>
+    storage.createTodo(title)
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.todosUpdate,
+    async (
+      _event,
+      id: string,
+      changes: Partial<{ title: string; completed: boolean; order: number }>
+    ) => storage.updateTodo(id, changes)
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.todosReorder,
+    async (_event, orderedIds: string[]) => storage.reorderTodos(orderedIds)
+  );
+  ipcMain.handle(IPC_CHANNELS.todosDelete, async (_event, id: string) =>
+    storage.deleteTodo(id)
+  );
 
   ipcMain.handle(IPC_CHANNELS.notesList, async () => storage.listNotes());
-  ipcMain.handle(IPC_CHANNELS.notesCreate, async (_event, title: string) => storage.createNote(title));
-  ipcMain.handle(IPC_CHANNELS.notesUpdate, async (_event, id: string, changes: Partial<{ title: string; content: string }>) => storage.updateNote(id, changes));
-  ipcMain.handle(IPC_CHANNELS.notesDelete, async (_event, id: string) => storage.deleteNote(id));
+  ipcMain.handle(IPC_CHANNELS.notesCreate, async (_event, title: string) =>
+    storage.createNote(title)
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.notesUpdate,
+    async (
+      _event,
+      id: string,
+      changes: Partial<{ title: string; content: string }>
+    ) => storage.updateNote(id, changes)
+  );
+  ipcMain.handle(IPC_CHANNELS.notesDelete, async (_event, id: string) =>
+    storage.deleteNote(id)
+  );
 
-  ipcMain.handle(IPC_CHANNELS.startStream, async (event, request: ChatStreamRequest) => {
-    const sender = event.sender;
-    void providerService.streamChat(request, (streamEvent: ChatStreamEvent) => {
-      if (!sender.isDestroyed()) {
-        sender.send(IPC_CHANNELS.streamEvent, streamEvent);
-      }
-    });
-    return request.streamId ?? null;
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.startStream,
+    async (event, request: ChatStreamRequest) => {
+      const sender = event.sender;
+      void providerService.streamChat(
+        request,
+        (streamEvent: ChatStreamEvent) => {
+          if (!sender.isDestroyed()) {
+            sender.send(IPC_CHANNELS.streamEvent, streamEvent);
+          }
+        }
+      );
+      return request.streamId ?? null;
+    }
+  );
 
   app.on("second-instance", () => {
     shell.togglePanel();

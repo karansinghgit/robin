@@ -4,12 +4,16 @@ import { StreamReplyResult } from "../tools/types";
 
 function buildTranscript(messages: ChatMessage[]): string {
   return messages
-    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter(
+      (message) => message.role === "user" || message.role === "assistant"
+    )
     .map((message) => {
       const imageNotes = (message.attachments ?? [])
         .map((attachment) => `[Image attached: ${attachment.name || "image"}]`)
         .join(" ");
-      const payload = [message.content, imageNotes].filter((chunk) => chunk.trim().length > 0).join(" ");
+      const payload = [message.content, imageNotes]
+        .filter((chunk) => chunk.trim().length > 0)
+        .join(" ");
       return `${message.role.toUpperCase()}: ${payload}`;
     })
     .join("\n\n");
@@ -33,7 +37,9 @@ function extractCitations(response: any): Citation[] {
   for (const item of output) {
     const content = Array.isArray(item?.content) ? item.content : [];
     for (const part of content) {
-      const annotations = Array.isArray(part?.annotations) ? part.annotations : [];
+      const annotations = Array.isArray(part?.annotations)
+        ? part.annotations
+        : [];
       for (const annotation of annotations) {
         const url = annotation?.url ?? annotation?.source?.url;
         const title = annotation?.title ?? annotation?.source?.title ?? url;

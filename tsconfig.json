@@ -9,13 +9,12 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "baseUrl": "."
   },
   "include": [
     "src/**/*",
+    "test/**/*",
     "forge.config.js",
     "webpack.*.config.js",
     "tailwind.config.js",

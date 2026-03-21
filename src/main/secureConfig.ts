@@ -55,10 +55,15 @@ export class SecureConfig {
     return decrypted.trim() || null;
   }
 
-  async setProviderApiKey(provider: CloudProviderId, apiKey: string): Promise<void> {
+  async setProviderApiKey(
+    provider: CloudProviderId,
+    apiKey: string
+  ): Promise<void> {
     this.assertEncryption();
     const secrets = await this.readSecrets();
-    const encrypted = safeStorage.encryptString(apiKey.trim()).toString("base64");
+    const encrypted = safeStorage
+      .encryptString(apiKey.trim())
+      .toString("base64");
     secrets.providerApiKeys[provider] = encrypted;
     await this.writeSecrets(secrets);
   }
@@ -71,37 +76,48 @@ export class SecureConfig {
 
   async getConfiguredProviderMap(): Promise<Record<CloudProviderId, boolean>> {
     const secrets = await this.readSecrets();
-    return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
-      result[providerId] = Boolean(secrets.providerApiKeys[providerId]);
-      return result;
-    }, {} as Record<CloudProviderId, boolean>);
+    return CLOUD_PROVIDER_IDS.reduce(
+      (result, providerId) => {
+        result[providerId] = Boolean(secrets.providerApiKeys[providerId]);
+        return result;
+      },
+      {} as Record<CloudProviderId, boolean>
+    );
   }
 
   async getProviderApiKeys(): Promise<Record<CloudProviderId, string>> {
     const secrets = await this.readSecrets();
 
     if (!safeStorage.isEncryptionAvailable()) {
-      return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
-        result[providerId] = "";
-        return result;
-      }, {} as Record<CloudProviderId, string>);
+      return CLOUD_PROVIDER_IDS.reduce(
+        (result, providerId) => {
+          result[providerId] = "";
+          return result;
+        },
+        {} as Record<CloudProviderId, string>
+      );
     }
 
-    return CLOUD_PROVIDER_IDS.reduce((result, providerId) => {
-      const encoded = secrets.providerApiKeys[providerId];
-      if (!encoded) {
-        result[providerId] = "";
-        return result;
-      }
+    return CLOUD_PROVIDER_IDS.reduce(
+      (result, providerId) => {
+        const encoded = secrets.providerApiKeys[providerId];
+        if (!encoded) {
+          result[providerId] = "";
+          return result;
+        }
 
-      try {
-        const decrypted = safeStorage.decryptString(Buffer.from(encoded, "base64"));
-        result[providerId] = decrypted.trim();
-      } catch {
-        result[providerId] = "";
-      }
-      return result;
-    }, {} as Record<CloudProviderId, string>);
+        try {
+          const decrypted = safeStorage.decryptString(
+            Buffer.from(encoded, "base64")
+          );
+          result[providerId] = decrypted.trim();
+        } catch {
+          result[providerId] = "";
+        }
+        return result;
+      },
+      {} as Record<CloudProviderId, string>
+    );
   }
 
   async getToolApiKey(name: string): Promise<string | null> {
@@ -116,7 +132,9 @@ export class SecureConfig {
   async setToolApiKey(name: string, key: string): Promise<void> {
     this.assertEncryption();
     const secrets = await this.readSecrets();
-    secrets.toolApiKeys[name] = safeStorage.encryptString(key.trim()).toString("base64");
+    secrets.toolApiKeys[name] = safeStorage
+      .encryptString(key.trim())
+      .toString("base64");
     await this.writeSecrets(secrets);
   }
 
@@ -147,7 +165,9 @@ export class SecureConfig {
 
   private assertEncryption(): void {
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error("System encryption is not available. Robin cannot store API keys securely on this device.");
+      throw new Error(
+        "System encryption is not available. Robin cannot store API keys securely on this device."
+      );
     }
   }
 }

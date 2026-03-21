@@ -41,7 +41,9 @@ export async function buildSystemPrompt(
   ];
 
   if (filled.length > 0) {
-    parts.push("Use the following context about the user when relevant to their question:");
+    parts.push(
+      "Use the following context about the user when relevant to their question:"
+    );
     parts.push(...filled);
   }
 

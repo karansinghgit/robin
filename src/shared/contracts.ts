@@ -2,7 +2,6 @@ export type AssistantMode = "search" | "local";
 
 export const CLOUD_PROVIDER_IDS = [
   "openai",
-  "anthropic",
   "google",
   "perplexity",
   "openrouter"
@@ -227,7 +226,9 @@ export interface RobinBridge {
   app: {
     togglePanel: () => Promise<void>;
     openWindow: () => Promise<void>;
-    setShortcut: (accelerator: string) => Promise<{ success: boolean; shortcut: string }>;
+    setShortcut: (
+      accelerator: string
+    ) => Promise<{ success: boolean; shortcut: string }>;
     openExternal: (url: string) => Promise<void>;
     getProfile: () => Promise<AppProfile>;
     getVersion: () => Promise<string>;
@@ -239,22 +240,33 @@ export interface RobinBridge {
       handlers?: Partial<{
         onThread: (event: Extract<ChatStreamEvent, { type: "thread" }>) => void;
         onDelta: (event: Extract<ChatStreamEvent, { type: "delta" }>) => void;
-        onCitations: (event: Extract<ChatStreamEvent, { type: "citations" }>) => void;
+        onCitations: (
+          event: Extract<ChatStreamEvent, { type: "citations" }>
+        ) => void;
         onDone: (event: Extract<ChatStreamEvent, { type: "done" }>) => void;
         onError: (event: Extract<ChatStreamEvent, { type: "error" }>) => void;
-        onContextUpdate: (event: Extract<ChatStreamEvent, { type: "context_update" }>) => void;
-        onToolStatus: (event: Extract<ChatStreamEvent, { type: "tool_status" }>) => void;
+        onContextUpdate: (
+          event: Extract<ChatStreamEvent, { type: "context_update" }>
+        ) => void;
+        onToolStatus: (
+          event: Extract<ChatStreamEvent, { type: "tool_status" }>
+        ) => void;
       }>
     ) => Promise<string>;
     listThreads: () => Promise<ThreadSummary[]>;
     loadThread: (id: string) => Promise<ConversationThread | null>;
     deleteThread: (id: string) => Promise<boolean>;
-    stopStream: (payload?: { streamId?: string; threadId?: string }) => Promise<void>;
+    stopStream: (payload?: {
+      streamId?: string;
+      threadId?: string;
+    }) => Promise<void>;
   };
   providers: {
     getStatus: () => Promise<ProviderStatus>;
     saveConfig: (config: SaveConfigInput) => Promise<ProviderStatus>;
-    listCloudModels: (provider: CloudProviderId) => Promise<CloudModelCatalogResult>;
+    listCloudModels: (
+      provider: CloudProviderId
+    ) => Promise<CloudModelCatalogResult>;
   };
   ollama: {
     detect: () => Promise<OllamaStatus>;
@@ -265,14 +277,20 @@ export interface RobinBridge {
   todos: {
     list: () => Promise<TodoItem[]>;
     create: (title: string) => Promise<TodoItem>;
-    update: (id: string, changes: Partial<Pick<TodoItem, "title" | "completed" | "order">>) => Promise<TodoItem | null>;
+    update: (
+      id: string,
+      changes: Partial<Pick<TodoItem, "title" | "completed" | "order">>
+    ) => Promise<TodoItem | null>;
     reorder: (orderedIds: string[]) => Promise<TodoItem[]>;
     delete: (id: string) => Promise<boolean>;
   };
   notes: {
     list: () => Promise<NoteItem[]>;
     create: (title: string) => Promise<NoteItem>;
-    update: (id: string, changes: Partial<Pick<NoteItem, "title" | "content">>) => Promise<NoteItem | null>;
+    update: (
+      id: string,
+      changes: Partial<Pick<NoteItem, "title" | "content">>
+    ) => Promise<NoteItem | null>;
     delete: (id: string) => Promise<boolean>;
   };
 }

@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { ChatStreamEvent, ChatStreamRequest, RobinBridge, SaveConfigInput } from "../shared/contracts";
+import {
+  ChatStreamEvent,
+  ChatStreamRequest,
+  RobinBridge,
+  SaveConfigInput
+} from "../shared/contracts";
 
 const CHANNELS = {
   togglePanel: "app:toggle-panel",
@@ -33,7 +38,10 @@ const CHANNELS = {
   notesDelete: "notes:delete"
 } as const;
 
-const activeStreamListeners = new Map<string, (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => void>();
+const activeStreamListeners = new Map<
+  string,
+  (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => void
+>();
 
 function clearStreamListener(streamId: string) {
   const listener = activeStreamListeners.get(streamId);
@@ -52,7 +60,8 @@ const bridge: RobinBridge = {
     openWindow: async () => {
       await ipcRenderer.invoke(CHANNELS.openWindow);
     },
-    setShortcut: async (accelerator) => ipcRenderer.invoke(CHANNELS.setShortcut, accelerator),
+    setShortcut: async (accelerator) =>
+      ipcRenderer.invoke(CHANNELS.setShortcut, accelerator),
     getProfile: async () => ipcRenderer.invoke(CHANNELS.profile),
     getVersion: async () => ipcRenderer.invoke(CHANNELS.version),
     checkForUpdates: async () => ipcRenderer.invoke(CHANNELS.checkUpdates),
@@ -63,7 +72,10 @@ const bridge: RobinBridge = {
   chat: {
     streamReply: async (request: ChatStreamRequest, handlers = {}) => {
       const streamId = crypto.randomUUID();
-      const listener = (_event: Electron.IpcRendererEvent, payload: ChatStreamEvent) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: ChatStreamEvent
+      ) => {
         if (payload.streamId !== streamId) {
           return;
         }
@@ -95,7 +107,10 @@ const bridge: RobinBridge = {
       ipcRenderer.on(CHANNELS.streamEvent, listener);
       activeStreamListeners.set(streamId, listener);
       try {
-        await ipcRenderer.invoke(CHANNELS.startStream, { ...request, streamId });
+        await ipcRenderer.invoke(CHANNELS.startStream, {
+          ...request,
+          streamId
+        });
       } catch (error) {
         clearStreamListener(streamId);
         throw error;
@@ -119,26 +134,36 @@ const bridge: RobinBridge = {
   },
   providers: {
     getStatus: async () => ipcRenderer.invoke(CHANNELS.providerStatus),
-    saveConfig: async (config: SaveConfigInput) => ipcRenderer.invoke(CHANNELS.saveConfig, config),
-    listCloudModels: async (provider) => ipcRenderer.invoke(CHANNELS.listCloudModels, provider)
+    saveConfig: async (config: SaveConfigInput) =>
+      ipcRenderer.invoke(CHANNELS.saveConfig, config),
+    listCloudModels: async (provider) =>
+      ipcRenderer.invoke(CHANNELS.listCloudModels, provider)
   },
   ollama: {
     detect: async () => ipcRenderer.invoke(CHANNELS.ollamaDetect),
-    listCatalog: async (limit?: number) => ipcRenderer.invoke(CHANNELS.ollamaCatalog, limit),
-    pullModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaPull, model),
-    deleteModel: async (model: string) => ipcRenderer.invoke(CHANNELS.ollamaDelete, model)
+    listCatalog: async (limit?: number) =>
+      ipcRenderer.invoke(CHANNELS.ollamaCatalog, limit),
+    pullModel: async (model: string) =>
+      ipcRenderer.invoke(CHANNELS.ollamaPull, model),
+    deleteModel: async (model: string) =>
+      ipcRenderer.invoke(CHANNELS.ollamaDelete, model)
   },
   todos: {
     list: async () => ipcRenderer.invoke(CHANNELS.todosList),
-    create: async (title: string) => ipcRenderer.invoke(CHANNELS.todosCreate, title),
-    update: async (id: string, changes) => ipcRenderer.invoke(CHANNELS.todosUpdate, id, changes),
-    reorder: async (orderedIds: string[]) => ipcRenderer.invoke(CHANNELS.todosReorder, orderedIds),
+    create: async (title: string) =>
+      ipcRenderer.invoke(CHANNELS.todosCreate, title),
+    update: async (id: string, changes) =>
+      ipcRenderer.invoke(CHANNELS.todosUpdate, id, changes),
+    reorder: async (orderedIds: string[]) =>
+      ipcRenderer.invoke(CHANNELS.todosReorder, orderedIds),
     delete: async (id: string) => ipcRenderer.invoke(CHANNELS.todosDelete, id)
   },
   notes: {
     list: async () => ipcRenderer.invoke(CHANNELS.notesList),
-    create: async (title: string) => ipcRenderer.invoke(CHANNELS.notesCreate, title),
-    update: async (id: string, changes) => ipcRenderer.invoke(CHANNELS.notesUpdate, id, changes),
+    create: async (title: string) =>
+      ipcRenderer.invoke(CHANNELS.notesCreate, title),
+    update: async (id: string, changes) =>
+      ipcRenderer.invoke(CHANNELS.notesUpdate, id, changes),
     delete: async (id: string) => ipcRenderer.invoke(CHANNELS.notesDelete, id)
   }
 };

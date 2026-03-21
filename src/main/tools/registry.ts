@@ -23,7 +23,9 @@ export function buildToolExecutors(
   return tools;
 }
 
-export function getToolDefinitions(executors: ToolExecutor[]): ToolDefinition[] {
+export function getToolDefinitions(
+  executors: ToolExecutor[]
+): ToolDefinition[] {
   return executors.map((t) => t.definition);
 }
 

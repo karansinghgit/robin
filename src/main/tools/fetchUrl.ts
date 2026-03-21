@@ -6,7 +6,10 @@ const USER_AGENT = "Robin/1.0 (Personal AI Assistant)";
 
 function stripHtml(html: string): string {
   // Remove script/style/noscript blocks entirely
-  let text = html.replace(/<(script|style|noscript|svg|head)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  let text = html.replace(
+    /<(script|style|noscript|svg|head)[^>]*>[\s\S]*?<\/\1>/gi,
+    ""
+  );
   // Prefer article/main content if present
   const articleMatch = text.match(/<(article|main)[^>]*>([\s\S]*?)<\/\1>/i);
   if (articleMatch) {
@@ -27,7 +30,10 @@ function stripHtml(html: string): string {
     .replace(/&nbsp;/g, " ")
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
   // Collapse whitespace
-  text = text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  text = text
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return text;
 }
 
@@ -39,7 +45,8 @@ function extractTitle(html: string): string {
 export const fetchUrlTool: ToolExecutor = {
   definition: {
     name: "fetch_url",
-    description: "Fetch the content of a web page at the given URL and return its text. Use this when the user shares a URL or asks about the content of a specific web page.",
+    description:
+      "Fetch the content of a web page at the given URL and return its text. Use this when the user shares a URL or asks about the content of a specific web page.",
     parameters: {
       type: "object",
       properties: {

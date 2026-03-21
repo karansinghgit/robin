@@ -1,4 +1,4 @@
-.PHONY: help setup dev start test check typecheck clean clean-dev clean-all package package-mac make make-mac install uninstall reinstall open-data create-release deploy-release release
+.PHONY: help setup dev start lint test check typecheck clean clean-dev clean-all package package-mac make make-mac install uninstall reinstall open-data create-release deploy-release release
 
 help:
 	@echo "Robin - Available commands:"
@@ -6,7 +6,8 @@ help:
 	@echo "Development:"
 	@echo "  make setup          - Check local prerequisites"
 	@echo "  make dev            - Start Robin in development mode"
-	@echo "  make test           - Run the current smoke gate (typecheck)"
+	@echo "  make lint           - Run ESLint across src/ and test/"
+	@echo "  make test           - Run lint, typecheck, unit tests, and format checks"
 	@echo "  make clean          - Remove build artifacts"
 	@echo "  make clean-dev      - Remove app data and stop Robin"
 	@echo "  make clean-all      - Remove artifacts and local app data"
@@ -36,6 +37,9 @@ dev:
 
 start:
 	@./scripts/npmw run start
+
+lint:
+	@./scripts/npmw run lint
 
 typecheck:
 	@./scripts/npmw run typecheck

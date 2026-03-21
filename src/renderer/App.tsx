@@ -3042,18 +3042,6 @@ export function App() {
                           void applyComposerSelection(nextValue);
                         }}
                       />
-                      {shouldShowCloudModeSelector ? (
-                        <ThemedDropdown
-                          className="composer-cloud-mode-dropdown"
-                          value={cloudModeDraft}
-                          options={cloudModeOptions}
-                          placeholder="Mode"
-                          compact
-                          borderless
-                          menuDirection="up"
-                          onChange={setCloudModeDraft}
-                        />
-                      ) : null}
                       <div className="capability-badges">
                         <span
                           className={`cap-badge${modelCapabilities.image ? " cap-active" : ""}`}
@@ -3077,6 +3065,7 @@ export function App() {
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <path d="m21 15-5-5L5 21" />
                           </svg>
+                          <span className="cap-badge-label">Images</span>
                         </span>
                         <span
                           className={`cap-badge${modelCapabilities.tools ? " cap-active" : ""}`}
@@ -3098,6 +3087,7 @@ export function App() {
                           >
                             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                           </svg>
+                          <span className="cap-badge-label">Tools</span>
                         </span>
                         <span
                           className={`cap-badge${modelCapabilities.search ? " cap-active" : ""}`}
@@ -3120,8 +3110,21 @@ export function App() {
                             <circle cx="11" cy="11" r="8" />
                             <path d="m21 21-4.35-4.35" />
                           </svg>
+                          <span className="cap-badge-label">Search</span>
                         </span>
                       </div>
+                      {shouldShowCloudModeSelector ? (
+                        <ThemedDropdown
+                          className="composer-cloud-mode-dropdown"
+                          value={cloudModeDraft}
+                          options={cloudModeOptions}
+                          placeholder="Mode"
+                          compact
+                          borderless
+                          menuDirection="up"
+                          onChange={setCloudModeDraft}
+                        />
+                      ) : null}
                       <button
                         type={isStreaming ? "button" : "submit"}
                         className={`send-btn${isStreaming ? " send-btn-stop" : ""}`}
